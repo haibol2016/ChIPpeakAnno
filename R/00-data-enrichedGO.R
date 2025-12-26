@@ -1,0 +1,77 @@
+#' Example Enriched Gene Ontology (GO) Terms
+#' 
+#' A dataset containing example results from Gene Ontology enrichment analysis
+#' performed using \code{\link{getEnrichedGO}}. This data object demonstrates
+#' the structure and format of GO enrichment results returned by the
+#' \code{getEnrichedGO} function.
+#' 
+#' @name enrichedGO
+#' @docType data
+#' 
+#' @format A named list with 3 data frames, one for each GO ontology branch:
+#' \describe{
+#'   \item{\code{bp}}{Data frame containing enriched Biological Process (BP)
+#'   terms with 9 columns (see Details below)}
+#'   \item{\code{mf}}{Data frame containing enriched Molecular Function (MF)
+#'   terms with 9 columns (see Details below)}
+#'   \item{\code{cc}}{Data frame containing enriched Cellular Component (CC)
+#'   terms with 9 columns (see Details below)}
+#' }
+#' 
+#' @details
+#' Each data frame in the list contains the following 9 columns:
+#' \describe{
+#'   \item{\code{go.id}}{Character. GO term identifier (e.g., "GO:0000001")}
+#'   \item{\code{go.term}}{Character. GO term name (e.g., "mitochondrion inheritance")}
+#'   \item{\code{go.Definition}}{Character. Detailed description of the GO term}
+#'   \item{\code{Ontology}}{Character. Ontology branch: "BP" (Biological Process),
+#'   "MF" (Molecular Function), or "CC" (Cellular Component)}
+#'   \item{\code{count.InDataset}}{Integer. Number of genes in the input dataset
+#'   annotated with this GO term}
+#'   \item{\code{count.InGenome}}{Integer. Total number of genes in the genome
+#'   annotated with this GO term}
+#'   \item{\code{pvalue}}{Numeric. P-value from the hypergeometric test for
+#'   enrichment}
+#'   \item{\code{totaltermInDataset}}{Integer. Total number of GO terms
+#'   associated with genes in the input dataset}
+#'   \item{\code{totaltermInGenome}}{Integer. Total number of GO terms in the
+#'   genome background}
+#' }
+#' 
+#' @source
+#' Generated using \code{\link{getEnrichedGO}} on example peak annotation data.
+#' This is a demonstration dataset showing the expected output format.
+#' 
+#' @seealso
+#' \code{\link{getEnrichedGO}} for performing GO enrichment analysis,
+#' \code{\link{enrichmentPlot}} for visualizing enrichment results
+#' 
+#' @author Lihua Julie Zhu
+#' @keywords datasets
+#' 
+#' @examples
+#' # Load the example data
+#' data(enrichedGO)
+#' 
+#' # Check the structure
+#' str(enrichedGO)
+#' 
+#' # View dimensions of each ontology branch
+#' dim(enrichedGO$bp)   # Biological Process
+#' dim(enrichedGO$mf)   # Molecular Function
+#' dim(enrichedGO$cc)   # Cellular Component
+#' 
+#' # View first few enriched terms in each category
+#' head(enrichedGO$bp, n = 5)
+#' head(enrichedGO$mf, n = 5)
+#' head(enrichedGO$cc, n = 5)
+#' 
+#' # Access specific columns
+#' enrichedGO$bp$go.term[1:5]
+#' enrichedGO$bp$pvalue[1:5]
+#' 
+#' # Visualize enrichment results
+#' if (requireNamespace("ChIPpeakAnno", quietly = TRUE)) {
+#'     enrichmentPlot(enrichedGO)
+#' }
+"enrichedGO"

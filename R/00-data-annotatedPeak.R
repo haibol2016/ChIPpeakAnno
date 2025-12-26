@@ -1,0 +1,106 @@
+#' Example Annotated Peaks Dataset
+#' 
+#' A \code{GRanges} object containing ChIP-seq peaks that have been annotated
+#' with genomic features (transcription start sites). This dataset serves as
+#' an example of the output format from \code{\link{annotatePeakInBatch}}.
+#' 
+#' @details
+#' This dataset contains putative STAT1-binding regions identified in
+#' un-stimulated cells using ChIP-seq technology (Robertson et al., 2007).
+#' The peaks were annotated to transcription start sites (TSS) using the
+#' \code{annotatePeakInBatch} function.
+#' 
+#' **How this dataset was created:**
+#' \preformatted{
+#' data(TSS.human.GRCh37)
+#' data(myPeakList)
+#' annotatedPeak <- annotatePeakInBatch(
+#'     myPeakList, 
+#'     AnnotationData = TSS.human.GRCh37,
+#'     output = "both",
+#'     multiple = FALSE
+#' )
+#' }
+#' 
+#' @name annotatedPeak
+#' @docType data
+#' 
+#' @format
+#' A \code{\link[GenomicRanges]{GRanges}} object with the following structure:
+#' 
+#' **Standard GRanges slots:**
+#' \describe{
+#'   \item{\code{seqnames}}{Chromosome/contig names (e.g., "chr1", "chr2")}
+#'   \item{\code{ranges}}{IRanges object containing start and end positions}
+#'   \item{\code{strand}}{Strand information ("+", "-", or "*")}
+#'   \item{\code{names}}{Peak identifiers}
+#' }
+#' 
+#' **Metadata columns (mcols):**
+#' \describe{
+#'   \item{\code{feature}}{Feature identifier (e.g., Ensembl gene ID, 
+#'   transcript ID) that the peak is associated with}
+#'   \item{\code{insideFeature}}{Spatial relationship between peak and feature:
+#'   \itemize{
+#'     \item \code{"upstream"}: Peak resides upstream of the feature
+#'     \item \code{"downstream"}: Peak resides downstream of the feature
+#'     \item \code{"inside"}: Peak is completely inside the feature
+#'     \item \code{"overlapStart"}: Peak overlaps with the start of the feature
+#'     \item \code{"overlapEnd"}: Peak overlaps with the end of the feature
+#'     \item \code{"includeFeature"}: Peak completely includes/contains the feature
+#'   }}
+#'   \item{\code{distancetoFeature}}{Distance (in base pairs) from the peak's
+#'   reference point to the feature's reference point (typically TSS). 
+#'   Negative values indicate upstream, positive values indicate downstream.
+#'   \code{NA} if the peak overlaps the feature.}
+#'   \item{\code{start_position}}{Start position of the associated feature 
+#'   (e.g., gene start, TSS position)}
+#'   \item{\code{end_position}}{End position of the associated feature 
+#'   (e.g., gene end, TES position)}
+#' }
+#' 
+#' @source
+#' Original ChIP-seq data from Robertson et al. (2007). Genome-wide profiles
+#' of STAT1 DNA association using chromatin immunoprecipitation and massively
+#' parallel sequencing. Nature Methods, 4(8), 651-657.
+#' 
+#' @references
+#' Robertson, G., Hirst, M., Bainbridge, M., Bilenky, M., Zhao, Y., 
+#' Zeng, T., ... & Jones, S. (2007). Genome-wide profiles of STAT1 DNA 
+#' association using chromatin immunoprecipitation and massively parallel 
+#' sequencing. \emph{Nature Methods}, 4(8), 651-657.
+#' 
+#' @keywords datasets
+#' 
+#' @examples
+#' 
+#' # Load the dataset
+#' data(annotatedPeak)
+#' 
+#' # Inspect the structure
+#' annotatedPeak
+#' 
+#' # View first few peaks
+#' head(annotatedPeak, 4)
+#' 
+#' # Access metadata columns
+#' mcols(annotatedPeak)
+#' 
+#' # Check distribution of peak-feature relationships
+#' table(annotatedPeak$insideFeature)
+#' 
+#' # Plot distance distribution (interactive example)
+#' if (interactive()) {
+#'     distances <- annotatedPeak$distancetoFeature
+#'     distances <- distances[!is.na(distances)]
+#'     distances <- as.numeric(as.character(distances))
+#'     
+#'     hist(distances,
+#'          xlab = "Distance To Nearest TSS (bp)",
+#'          main = "Distribution of Peak-to-TSS Distances",
+#'          breaks = 100,
+#'          col = "steelblue",
+#'          border = "white")
+#' }
+#' 
+"annotatedPeak"

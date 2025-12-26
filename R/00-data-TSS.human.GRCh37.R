@@ -1,0 +1,74 @@
+#' Transcription Start Site (TSS) annotation for human (GRCh37/hg19)
+#' 
+#' A \code{\link[GenomicRanges]{GRanges}} object containing Transcription Start
+#' Site (TSS) coordinates for \emph{Homo sapiens} based on the GRCh37 (also
+#' known as hg19) genome assembly. This dataset was obtained from Ensembl via
+#' biomaRt and can be used directly with \code{\link{annotatePeakInBatch}} for
+#' peak annotation.
+#' 
+#' @name TSS.human.GRCh37
+#' @docType data
+#' 
+#' @format A \code{\link[GenomicRanges]{GRanges}} object with the following structure:
+#' \describe{
+#'   \item{seqnames}{Chromosome names (e.g., "1", "2", "X", "Y", "MT")}
+#'   \item{ranges}{\code{\link[IRanges]{IRanges}} object with TSS coordinates}
+#'   \item{strand}{Strand information ("+", "-", or "*")}
+#'   \item{names}{Ensembl gene IDs as character vector}
+#'   \item{description}{Gene description from Ensembl (in metadata columns)}
+#' }
+#' 
+#' @details
+#' This dataset contains TSS coordinates for all annotated genes in the human
+#' genome (GRCh37/hg19 assembly). The TSS is defined as the 5' end of the
+#' transcript for plus-strand genes and the 3' end for minus-strand genes.
+#' 
+#' \strong{Genome assembly:} GRCh37 (also known as hg19)  
+#' \strong{Source:} Ensembl via biomaRt  
+#' \strong{Use case:} Direct annotation of ChIP-seq peaks to nearest TSS
+#' 
+#' \strong{Data generation:}
+#' The dataset was obtained using:
+#' \preformatted{
+#' mart <- useMart(
+#'     biomart = "ENSEMBL_MART_ENSEMBL",
+#'     host = "grch37.ensembl.org",
+#'     path = "/biomart/martservice",
+#'     dataset = "hsapiens_gene_ensembl"
+#' )
+#' TSS.human.GRCh37 <- getAnnotation(mart, featureType = "TSS")
+#' }
+#' 
+#' @note
+#' GRCh37 (hg19) is a legacy genome assembly. For new analyses, consider using
+#' \code{\link{TSS.human.GRCh38}} which is based on the current reference
+#' assembly (GRCh38/hg38).
+#' 
+#' @seealso
+#' \code{\link{TSS.human.GRCh38}}, \code{\link{TSS.human.NCBI36}},
+#' \code{\link{annotatePeakInBatch}}, \code{\link{getAnnotation}}
+#' 
+#' @keywords datasets
+#' 
+#' @examples
+#' # Load the TSS annotation
+#' data(TSS.human.GRCh37)
+#' 
+#' # Inspect the structure
+#' TSS.human.GRCh37
+#' length(TSS.human.GRCh37)
+#' 
+#' # View first few TSS
+#' head(TSS.human.GRCh37)
+#' 
+#' # Use for peak annotation
+#' \dontrun{
+#' library(ChIPpeakAnno)
+#' annotated <- annotatePeakInBatch(
+#'     peaks,
+#'     AnnotationData = TSS.human.GRCh37,
+#'     output = "nearestLocation",
+#'     FeatureLocForDistance = "TSS"
+#' )
+#' }
+"TSS.human.GRCh37"

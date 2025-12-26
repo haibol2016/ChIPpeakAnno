@@ -1,0 +1,65 @@
+#' Transcription Start Site (TSS) annotation for zebrafish (Zv8/danRer7)
+#' 
+#' A \code{\link[GenomicRanges]{GRanges}} object containing Transcription Start
+#' Site (TSS) coordinates for \emph{Danio rerio} (zebrafish) based on the Zv8
+#' (also known as danRer7) genome assembly. This is a legacy genome assembly
+#' and is provided for compatibility with older datasets.
+#' 
+#' @name TSS.zebrafish.Zv8
+#' @docType data
+#' 
+#' @format A \code{\link[GenomicRanges]{GRanges}} object with the following structure:
+#' \describe{
+#'   \item{seqnames}{Chromosome names (e.g., "1", "2", "MT")}
+#'   \item{ranges}{\code{\link[IRanges]{IRanges}} object with TSS coordinates}
+#'   \item{strand}{Strand information ("+", "-", or "*")}
+#'   \item{names}{Ensembl gene IDs as character vector}
+#'   \item{description}{Gene description from Ensembl (in metadata columns)}
+#' }
+#' 
+#' @details
+#' This dataset contains TSS coordinates for all annotated genes in the
+#' zebrafish genome (Zv8/danRer7 assembly). The TSS is defined as the 5' end
+#' of the transcript for plus-strand genes and the 3' end for minus-strand
+#' genes.
+#' 
+#' \strong{Genome assembly:} Zv8 (also known as danRer7) - **Legacy assembly**  
+#' \strong{Source:} Ensembl archive via biomaRt  
+#' \strong{Use case:} Annotation of legacy datasets aligned to danRer7
+#' 
+#' \strong{Data generation:}
+#' The dataset was obtained from Ensembl archive using:
+#' \preformatted{
+#' mart <- useMart(
+#'     biomart = "ENSEMBL_MART_ENSEMBL",
+#'     host = "may2009.archive.ensembl.org",
+#'     path = "/biomart/martservice",
+#'     dataset = "drerio_gene_ensembl"
+#' )
+#' TSS.zebrafish.Zv8 <- getAnnotation(mart, featureType = "TSS")
+#' }
+#' 
+#' @note
+#' Zv8 (danRer7) is a legacy genome assembly that has been superseded by Zv9
+#' (danRer10) and later assemblies. For new analyses, use
+#' \code{\link{TSS.zebrafish.Zv9}} or consider using the latest assembly. This
+#' dataset is maintained for compatibility with older datasets that were aligned
+#' to danRer7.
+#' 
+#' @seealso
+#' \code{\link{TSS.zebrafish.Zv9}}, \code{\link{annotatePeakInBatch}},
+#' \code{\link{getAnnotation}}
+#' 
+#' @keywords datasets
+#' 
+#' @examples
+#' # Load the TSS annotation
+#' data(TSS.zebrafish.Zv8)
+#' 
+#' # Inspect the structure
+#' TSS.zebrafish.Zv8
+#' length(TSS.zebrafish.Zv8)
+#' 
+#' # View first few TSS
+#' head(TSS.zebrafish.Zv8)
+"TSS.zebrafish.Zv8"

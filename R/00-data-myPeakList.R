@@ -1,0 +1,49 @@
+#' Example ChIP-seq peak dataset: STAT1 binding sites
+#' 
+#' A \code{\link[GenomicRanges]{GRanges}} object containing putative STAT1-binding
+#' regions identified in un-stimulated cells using ChIP-seq technology. This
+#' dataset is commonly used in package examples and vignettes to demonstrate
+#' peak annotation workflows.
+#' 
+#' @name myPeakList
+#' @docType data
+#' 
+#' @format A \code{\link[GenomicRanges]{GRanges}} object with the following structure:
+#' \describe{
+#'   \item{seqnames}{Chromosome names (e.g., "chr1", "chr2")}
+#'   \item{ranges}{\code{\link[IRanges]{IRanges}} object with start and end positions}
+#'   \item{strand}{Strand information ("+", "-", or "*")}
+#'   \item{names}{Peak identifiers as character vector}
+#'   \item{metadata}{Additional metadata columns if present}
+#' }
+#' 
+#' @details
+#' This dataset contains 11,004 STAT1 binding peaks identified from ChIP-seq
+#' experiments. The data is provided in GRanges format, which is the standard
+#' format for genomic interval data in Bioconductor packages.
+#' 
+#' @source
+#' Robertson G, Hirst M, Bainbridge M, Bilenky M, Zhao Y, et al. (2007)
+#' Genome-wide profiles of STAT1 DNA association using chromatin
+#' immunoprecipitation and massively parallel sequencing.
+#' \emph{Nature Methods} 4:651-657.
+#' \doi{10.1038/nmeth1068}
+#' 
+#' @keywords datasets
+#' 
+#' @examples
+#' # Load the data
+#' data(myPeakList)
+#' 
+#' # Inspect the structure
+#' myPeakList
+#' 
+#' # Check the number of peaks
+#' length(myPeakList)
+#' 
+#' # View first few peaks
+#' head(myPeakList)
+#' 
+#' # Check chromosome distribution
+#' table(seqnames(myPeakList))
+"myPeakList"
