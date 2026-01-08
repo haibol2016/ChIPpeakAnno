@@ -1,4 +1,4 @@
-#' Gene model with exon, 5' UTR and 3' UTR information for human (GRCh37/hg19)
+#' Gene model with exon, 5' UTR and 3' UTR information for the human genome (GRCh37/hg19)
 #' 
 #' A pre-computed annotation dataset containing exon, 5' UTR, and 3' UTR
 #' information for *Homo sapiens* based on the GRCh37/hg19 genome assembly.
@@ -34,7 +34,8 @@
 #'     path = "/biomart/martservice",
 #'     dataset = "hsapiens_gene_ensembl"
 #' )
-#' ExonPlusUtr.human.GRCh37 <- getAnnotation(mart = mart, featureType = "ExonPlusUtr")
+#' ExonPlusUtr.human.GRCh37 <- getAnnotation(mart = mart, 
+#'                                           featureType = "ExonPlusUtr")
 #' }
 #' 
 #' **Note**: GRCh37 (also known as hg19) is an older genome assembly. For

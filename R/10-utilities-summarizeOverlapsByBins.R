@@ -3,109 +3,291 @@ countByOverlaps <- function(features, reads,  ignore.strand, inter.feature) {
     countOverlaps(features, reads, ignore.strand=ignore.strand)
 }
 
-
-
-#' Perform overlap queries between reads and genomic features by bins
+#' Count reads in bins within genomic features
 #' 
-#' summarizeOverlapsByBins extends
-#' \link[GenomicAlignments:summarizeOverlaps-methods]{summarizeOverlaps} by
-#' providing fixed window size and step to split each feature into bins and
-#' then do queries. It will return counts by signalSummaryFUN, which applied to
-#' bins in one feature, for each feature.
+#' @description 
+#' Splits each genomic feature into bins and counts overlapping reads in each
+#' bin, then aggregates bin counts per feature using a summary function. This
+#' extends \code{\link[GenomicAlignments]{summarizeOverlaps}} by providing
+#' fine-grained binning within features, allowing analysis of signal distribution
+#' patterns across features.
 #' 
+#' This function is particularly useful for:
+#' \itemize{
+#'   \item Creating metagene plots (average signal across features)
+#'   \item Analyzing signal profiles and distributions
+#'   \item Identifying regions of high signal within features
+#'   \item Comparing signal patterns across different feature sets
+#' }
 #' 
-#' @param targetRegions A \link[GenomicRanges:GRanges-class]{GRanges} object of
-#' genomic regions of interest.
-#' @param reads A \link[GenomicRanges:GRanges-class]{GRanges},
-#' \link[GenomicRanges:GRangesList-class]{GRangesList}
-#' \link[GenomicAlignments:GAlignments-class]{GAlignments},
-#' \link[GenomicAlignments:GAlignmentsList-class]{GAlignmentsList},
-#' \link[GenomicAlignments:GAlignmentPairs-class]{GAlignmentPairs} or
-#' \link[Rsamtools:BamFile-class]{BamFileList} object that represents the data
-#' to be counted by
-#' \code{\link[GenomicAlignments:summarizeOverlaps-methods]{summarizeOverlaps}}.
-#' @param windowSize Size of windows
-#' @param step Step of windows
-#' @param signalSummaryFUN function, which will be applied to the bins in each
-#' feature.
-#' @param mode mode can be one of the pre-defined count methods. see
-#' \link[GenomicAlignments:summarizeOverlaps-methods]{summarizeOverlaps}.
-#' default is countByOverlaps, alia of countOverlaps(features, reads,
-#' ignore.strand=ignore.strand)
-#' @param ...  Additional arguments passed to
-#' \code{\link[GenomicAlignments:summarizeOverlaps-methods]{summarizeOverlaps}}.
-#' @return A
-#' \link[SummarizedExperiment:RangedSummarizedExperiment-class]{RangedSummarizedExperiment}
-#' object. The assays slot holds the counts, rowRanges holds the annotation
-#' from features.
+#' @param targetRegions A \code{\link[GenomicRanges]{GRanges}} object
+#'        containing genomic features (e.g., genes, peaks, exons) to be binned.
+#'        Must have unique, non-null names. Features are split into bins, and
+#'        read counts are aggregated per feature using the summary function.
+#' @param reads A \code{\link[GenomicRanges]{GRanges}},
+#'        \code{\link[GenomicRanges]{GRangesList}},
+#'        \code{\link[GenomicAlignments]{GAlignments}},
+#'        \code{\link[GenomicAlignments]{GAlignmentsList}},
+#'        \code{\link[GenomicAlignments]{GAlignmentPairs}}, or
+#'        \code{\link[Rsamtools]{BamFileList}} object representing the
+#'        sequencing reads to be counted. Must have length > 1 (multiple
+#'        samples/conditions).
+#' @param windowSize An integer specifying the size of each bin within features
+#'        in base pairs. Default is \code{50L}. Each feature is divided into
+#'        overlapping bins of this size. Bins that extend beyond feature
+#'        boundaries are excluded (partial windows are not kept).
+#' @param step An integer specifying the step size for sliding bins in base
+#'        pairs. Default is \code{10L}. Bins are created by sliding a window
+#'        of size \code{windowSize} by \code{step} base pairs. Smaller step
+#'        sizes create more bins and provide finer resolution but require more
+#'        computation.
+#' @param signalSummaryFUN A function applied to bin counts within each feature
+#'        to aggregate them into a single value per feature. Must accept a
+#'        numeric vector and return a single numeric value. Common options:
+#'        \itemize{
+#'          \item \code{max}: Maximum count across all bins (default) - useful
+#'                for finding peak signal
+#'          \item \code{mean}: Average count across bins - useful for overall
+#'                signal level
+#'          \item \code{sum}: Total count across bins - useful for total signal
+#'          \item \code{median}: Median count - robust to outliers
+#'          \item Custom functions: Any function that takes a vector and returns
+#'                a single numeric
+#'        }
+#' @param mode A function specifying the count method to use. Default is
+#'        \code{countByOverlaps}, which counts overlaps between reads and bins.
+#'        See \code{\link[GenomicAlignments]{summarizeOverlaps}} for other
+#'        options (e.g., \code{Union}, \code{IntersectionStrict},
+#'        \code{IntersectionNotEmpty}).
+#' @param ... Additional arguments passed to
+#'        \code{\link[GenomicAlignments]{summarizeOverlaps}}, such as
+#'        \code{ignore.strand}, \code{inter.feature}, etc.
+#' 
+#' @return Returns a \code{\link[SummarizedExperiment]{RangedSummarizedExperiment}}
+#'        object with:
+#'        \itemize{
+#'          \item \code{assays}: A \code{SimpleList} containing a \code{counts}
+#'                matrix with aggregated counts per feature. Rows correspond to
+#'                features (from \code{targetRegions}), columns correspond to
+#'                samples/conditions (from \code{reads}). Values are the result
+#'                of applying \code{signalSummaryFUN} to bin counts within each
+#'                feature.
+#'          \item \code{rowRanges}: A \code{\link[GenomicRanges]{GRanges}}
+#'                object containing the input features (from \code{targetRegions}).
+#'                Row names match the feature names.
+#'          \item \code{colData}: Sample metadata from the input \code{reads}
+#'                object (if available).
+#'        }
+#' 
+#' @details
+#' 
+#' \strong{How the function works:}
+#' \enumerate{
+#'   \item Validates input: ensures \code{targetRegions} has unique names and
+#'         \code{reads} has length > 1
+#'   \item Validates \code{signalSummaryFUN}: checks that it returns a single
+#'         numeric value
+#'   \item Splits each feature into bins using \code{\link{tileGRanges}}:
+#'         \itemize{
+#'           \item Creates overlapping bins of size \code{windowSize}
+#'           \item Slides bins by \code{step} base pairs
+#'           \item Excludes partial bins that extend beyond feature boundaries
+#'           \item Assigns each bin an \code{oid} (original ID) linking it to
+#'                 its parent feature
+#'         }
+#'   \item Counts reads in each bin using \code{\link[GenomicAlignments]{summarizeOverlaps}}
+#'   \item Aggregates bin counts per feature using \code{signalSummaryFUN}:
+#'         \itemize{
+#'           \item Groups bins by their parent feature (using \code{oid})
+#'           \item Applies \code{signalSummaryFUN} to bin counts within each
+#'                 group
+#'           \item Creates one aggregated value per feature per sample
+#'         }
+#'   \item Returns a SummarizedExperiment with aggregated counts
+#' }
+#' 
+#' \strong{Binning process:}
+#' Each feature is divided into overlapping bins:
+#' \itemize{
+#'   \item Bin size: \code{windowSize} base pairs
+#'   \item Step size: \code{step} base pairs (bins overlap by
+#'         \code{windowSize - step} bp)
+#'   \item Partial bins at feature ends are excluded
+#'   \item Each bin retains the chromosome, strand, and other metadata from its
+#'         parent feature
+#' }
+#' 
+#' Example: For a 200 bp feature with \code{windowSize = 50} and \code{step = 10}:
+#' \itemize{
+#'   \item Bin 1: positions 1-50
+#'   \item Bin 2: positions 11-60
+#'   \item Bin 3: positions 21-70
+#'   \item ... (continues until bin extends beyond feature)
+#' }
+#' 
+#' \strong{Aggregation:}
+#' After counting reads in each bin, counts are aggregated per feature:
+#' \itemize{
+#'   \item All bins belonging to the same feature are grouped
+#'   \item \code{signalSummaryFUN} is applied to the vector of bin counts
+#'   \item The result is a single value representing the feature's signal
+#' }
+#' 
+#' \strong{Use cases by summary function:}
+#' \itemize{
+#'   \item \code{max}: Find features with high peak signal (useful for
+#'         identifying strongly bound regions)
+#'   \item \code{mean}: Compare average signal levels across features (useful
+#'         for differential analysis)
+#'   \item \code{sum}: Compare total signal per feature (useful for comparing
+#'         feature sizes)
+#'   \item \code{median}: Robust signal measure (less sensitive to outliers)
+#' }
+#' 
+#' \strong{Performance considerations:}
+#' \itemize{
+#'   \item Smaller \code{step} values create more bins and increase computation
+#'         time
+#'   \item Larger \code{windowSize} values create fewer bins but may reduce
+#'         resolution
+#'   \item The function processes all features and all samples, so large
+#'         datasets may require significant memory and time
+#' }
+#' 
+#' @note
+#' \itemize{
+#'   \item \code{targetRegions} must have unique, non-null names (required for
+#'         row naming in output)
+#'   \item \code{reads} must have length > 1 (multiple samples required)
+#'   \item \code{signalSummaryFUN} must return a single numeric value (validated
+#'         at runtime)
+#'   \item Partial bins (extending beyond feature boundaries) are excluded
+#'   \item The function uses \code{tileGRanges} internally for binning
+#'   \item Bins are created with overlapping windows (sliding window approach)
+#' }
+#' 
+#' @seealso
+#' \itemize{
+#'   \item \code{\link[GenomicAlignments]{summarizeOverlaps}} for the underlying
+#'         read counting function
+#'   \item \code{\link{tileGRanges}} for the binning function used internally
+#'   \item \code{\link[SummarizedExperiment]{SummarizedExperiment}} for the
+#'         output object class
+#' }
+#' 
 #' @author Jianhong Ou
 #' @keywords misc
 #' @export
 #' @importFrom GenomicAlignments summarizeOverlaps
-#' @importFrom SummarizedExperiment colData SummarizedExperiment
+#' @importFrom SummarizedExperiment colData SummarizedExperiment assay
 #' @importFrom S4Vectors SimpleList aggregate
 #' @examples
 #' 
-#'     fls <- list.files(system.file("extdata", package="GenomicAlignments"),
-#'                   recursive=TRUE, pattern="*bam$", full=TRUE)
-#'     names(fls) <- basename(fls)
-#'     genes <- GRanges(
-#'         seqnames = c(rep("chr2L", 4), rep("chr2R", 5), rep("chr3L", 2)),
-#'         ranges = IRanges(c(1000, 3000, 4000, 7000, 2000, 3000, 3600, 
-#'                            4000, 7500, 5000, 5400), 
-#'                          width=c(rep(500, 3), 600, 900, 500, 300, 900, 
-#'                                  300, 500, 500),
-#'                          names=letters[1:11])) 
-#'     se <- summarizeOverlapsByBins(genes, fls, windowSize=50, step=10)
+#' # Example 1: Basic usage with BAM files
+#' fls <- list.files(system.file("extdata", package="GenomicAlignments"),
+#'               recursive=TRUE, pattern="*bam$", full=TRUE)
+#' names(fls) <- basename(fls)
+#' genes <- GRanges(
+#'     seqnames = c(rep("chr2L", 4), rep("chr2R", 5), rep("chr3L", 2)),
+#'     ranges = IRanges(c(1000, 3000, 4000, 7000, 2000, 3000, 3600, 
+#'                        4000, 7500, 5000, 5400), 
+#'                      width=c(rep(500, 3), 600, 900, 500, 300, 900, 
+#'                              300, 500, 500),
+#'                      names=letters[1:11])) 
+#' se <- summarizeOverlapsByBins(genes, fls, windowSize=50, step=10)
 #' 
-summarizeOverlapsByBins <- function(targetRegions, reads, 
-                                    windowSize=50, step=10, 
-                                    signalSummaryFUN=max, 
-                                    mode=countByOverlaps, ...){
-    stopifnot(is(targetRegions, "GRanges"))
-    stopifnot(is.function(signalSummaryFUN))
-    stopifnot(length(reads)>1)
-    if(length(names(targetRegions))==0 ||
-       any(duplicated(names(targetRegions)))){
-        stop("duplicated or null targetRegions names.")
+#' # Example 2: Using different summary functions
+#' \dontrun{
+#' # Maximum signal per feature (default)
+#' se_max <- summarizeOverlapsByBins(genes, fls, signalSummaryFUN = max)
+#' 
+#' # Average signal per feature
+#' se_mean <- summarizeOverlapsByBins(genes, fls, signalSummaryFUN = mean)
+#' 
+#' # Total signal per feature
+#' se_sum <- summarizeOverlapsByBins(genes, fls, signalSummaryFUN = sum)
+#' 
+#' # Median signal per feature
+#' se_median <- summarizeOverlapsByBins(genes, fls, signalSummaryFUN = median)
+#' }
+#' 
+#' # Example 3: Different bin sizes and step sizes
+#' \dontrun{
+#' # Larger bins, larger step (fewer bins, faster)
+#' se_large <- summarizeOverlapsByBins(genes, fls, windowSize=100, step=50)
+#' 
+#' # Smaller bins, smaller step (more bins, finer resolution)
+#' se_fine <- summarizeOverlapsByBins(genes, fls, windowSize=25, step=5)
+#' }
+#' 
+#' # Example 4: Using GRanges objects as reads
+#' \dontrun{
+#' # Create example read data
+#' reads1 <- GRanges("chr2L", IRanges(1000:2000, width=50))
+#' reads2 <- GRanges("chr2L", IRanges(1500:2500, width=50))
+#' reads_list <- GRangesList(sample1=reads1, sample2=reads2)
+#' 
+#' se <- summarizeOverlapsByBins(genes, reads_list, windowSize=50, step=10)
+#' }
+#' 
+#' # Example 5: Accessing results
+#' \dontrun{
+#' se <- summarizeOverlapsByBins(genes, fls, windowSize=50, step=10)
+#' 
+#' # Get count matrix
+#' counts <- assay(se)
+#' 
+#' # Get feature ranges
+#' features <- rowRanges(se)
+#' 
+#' # Get sample metadata
+#' sample_info <- colData(se)
+#' }
+#' 
+summarizeOverlapsByBins <- function(targetRegions,
+                                    reads,
+                                    windowSize = 50L,
+                                    step = 10L,
+                                    signalSummaryFUN = max,
+                                    mode = countByOverlaps,
+                                    ...) {
+    stopifnot(
+        inherits(targetRegions, "GRanges"),
+        is.function(signalSummaryFUN),
+        length(reads) > 1L
+    )
+    
+    if (length(names(targetRegions)) == 0L ||
+        any(duplicated(names(targetRegions)))) {
+        stop("targetRegions must have unique, non-null names", call. = FALSE)
     }
-    checkFun <- signalSummaryFUN(1:10)
-    if(length(checkFun)!=1){
-        stop("the output of signalSummaryFUN must be a vector with length 1")
+    
+    checkFun <- signalSummaryFUN(seq_len(10L))
+    if (length(checkFun) != 1L) {
+        stop("the output of signalSummaryFUN must be a vector with length 1",
+             call. = FALSE)
     }
-    if(!inherits(checkFun, c("numeric", "integer"))){
-        stop("the output of signalSummaryFUN must be a numeric.")
+    if (!inherits(checkFun, c("numeric", "integer"))) {
+        stop("the output of signalSummaryFUN must be numeric", call. = FALSE)
     }
     ## change the targetRegions by windowSize, step
-#     if(any(width(targetRegions)<windowSize) | any(width(targetRegions)<step)){
-#         warning("Some of targetRegions are smaller than windowSize or step.",
-#                 "They will be removed.")
-#     }
-#     targetRegions <- targetRegions[width(targetRegions)>=windowSize]
-#     targetRegions <- targetRegions[width(targetRegions)>=step]
-#     tileTargetRanges <- tile(x=ranges(targetRegions), width=step)
-#     nt <- elementNROWS(tileTargetRanges)
-#     tileTargetRanges.end <- rep(end(targetRegions), nt)
-#     tileTargetRanges <- unlist(tileTargetRanges)
-#     width(tileTargetRanges) <- windowSize
-#     tileTargetRegions <- GRanges(rep(seqnames(targetRegions), nt), 
-#                                  tileTargetRanges,
-#                                  rep(strand(targetRegions), nt),
-#                                  oid=rep(1:length(targetRegions), nt))
-#     tileTargetRegions <- tileTargetRegions[end(tileTargetRanges) <= 
-#                                            tileTargetRanges.end]
-    tileTargetRegions <- tileGRanges(targetRegions, windowSize, 
-                                     step, keepPartialWindow=FALSE)
-    se <- summarizeOverlaps(features=tileTargetRegions, reads=reads, 
-                            mode=mode, ...)
-    cnts <- aggregate(x=assay(se), 
-                      by=list(oid_USED_BY_SE_OU=tileTargetRegions$oid), 
-                      FUN=signalSummaryFUN, drop=FALSE)
-    se.rowRanges <- targetRegions[cnts$oid_USED_BY_SE_OU]
-    rownames(cnts) <- names(se.rowRanges)
+    tileTargetRegions <- tileGRanges(targetRegions,
+                                     windowSize,
+                                     step,
+                                     keepPartialWindow = FALSE)
+    se <- summarizeOverlaps(features = tileTargetRegions,
+                            reads = reads,
+                            mode = mode,
+                            ...)
+    cnts <- aggregate(x = assay(se),
+                      by = list(oid_USED_BY_SE_OU = tileTargetRegions$oid),
+                      FUN = signalSummaryFUN,
+                      drop = FALSE)
+    se_rowRanges <- targetRegions[cnts$oid_USED_BY_SE_OU]
+    rownames(cnts) <- names(se_rowRanges)
     cnts$oid_USED_BY_SE_OU <- NULL
     cnts <- as.matrix(cnts)
-    SummarizedExperiment(assays=SimpleList(counts=cnts), 
-                         rowRanges=se.rowRanges,
-                         colData=colData(se))
+    SummarizedExperiment(assays = SimpleList(counts = cnts),
+                         rowRanges = se_rowRanges,
+                         colData = colData(se))
 }

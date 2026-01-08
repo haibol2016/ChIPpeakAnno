@@ -1,58 +1,163 @@
 #' Add metadata columns to overlapping peaks
 #' 
+#' @description 
 #' Adds metadata columns from the original GRanges objects to the overlapping
 #' peaks result object returned by \code{\link{findOverlapsOfPeaks}}. This
 #' function aggregates metadata values from overlapping peaks using a specified
-#' function (default: \code{c} for concatenation).
+#' function (default: \code{c} for concatenation). When multiple peaks from
+#' different sets overlap and are merged into a single region, their metadata
+#' values are combined according to the aggregation function.
+#' 
+#' This function is particularly useful when you want to preserve metadata
+#' (e.g., scores, p-values, fold changes, peak names) from the original peak
+#' sets in the overlap analysis results, allowing you to track which original
+#' peaks contributed to each merged region.
 #' 
 #' @param ol An object of class \code{overlappingPeaks}, which is the output
-#'   of \code{\link{findOverlapsOfPeaks}}.
-#' @param colNames Character vector of metadata column names to be added. If
-#'   \code{NULL} (default), the function will automatically detect columns that
-#'   are present in all input peak sets and add those.
+#'        of \code{\link{findOverlapsOfPeaks}}. The object must contain:
+#'        \itemize{
+#'          \item \code{all.peaks}: A list of GRanges objects (one per input
+#'                peak set) containing the original peaks with their metadata
+#'          \item \code{peaklist}: A list of GRanges objects (one per overlap
+#'                category) containing merged overlapping peaks with a
+#'                \code{peakNames} field
+#'        }
+#' @param colNames A character vector of metadata column names to be added. If
+#'        \code{NULL} (default), the function will automatically detect columns
+#'        that are present in all input peak sets (from \code{ol$all.peaks}) and
+#'        add those. This ensures only common columns are processed.
 #' @param FUN A function used to aggregate metadata values when multiple peaks
-#'   overlap. Default is \code{c} (concatenation). Other useful functions
-#'   include \code{mean}, \code{sum}, \code{max}, \code{min}, or custom
-#'   functions. The function should accept a vector and return a single value.
-#' @param ... Additional arguments passed to \code{FUN}.
+#'        overlap and are merged. Default is \code{c} (concatenation). The
+#'        function should accept a vector of values and return a single
+#'        aggregated value. Useful functions include:
+#'        \itemize{
+#'          \item \code{c}: Concatenates values into a vector (useful for IDs,
+#'                names, preserving all values)
+#'          \item \code{mean}: Computes arithmetic mean (useful for scores,
+#'                signals, continuous values)
+#'          \item \code{sum}: Computes sum (useful for counts, totals)
+#'          \item \code{max}: Takes maximum value (useful for p-values when
+#'                lower is better, or confidence scores)
+#'          \item \code{min}: Takes minimum value (useful for p-values when
+#'                lower is better, or distances)
+#'          \item \code{unique}: Returns unique values (useful for categorical
+#'                data)
+#'          \item Custom functions: Any function that takes a vector and returns
+#'                a single value
+#'        }
+#' @param ... Additional arguments passed to \code{FUN} during aggregation.
 #' 
-#' @return An object of class \code{overlappingPeaks} with metadata columns
-#'   added to the \code{peaklist} element. The structure is the same as the
-#'   input, but each element in \code{peaklist} now contains the aggregated
-#'   metadata columns from the overlapping peaks.
+#' @return Returns the same \code{overlappingPeaks} object with metadata columns
+#'        added to each element in \code{peaklist}. The structure is:
+#'        \itemize{
+#'          \item \code{venn_cnt}: Unchanged (Venn counts)
+#'          \item \code{peaklist}: Modified - each GRanges object now contains
+#'                the aggregated metadata columns from the original overlapping
+#'                peaks. The number of rows matches the number of merged regions
+#'                in each overlap category.
+#'          \item \code{uniquePeaks}, \code{mergedPeaks}, etc.: Unchanged
+#'          \item \code{all.peaks}: Unchanged (original peaks)
+#'        }
+#'        The aggregated metadata is added as new columns to the metadata of
+#'        each element in \code{peaklist}, preserving any existing metadata
+#'        columns.
 #' 
 #' @details
-#' This function is useful when you want to preserve metadata (e.g., scores,
-#' p-values, fold changes) from the original peak sets in the overlap analysis
-#' results. When multiple peaks overlap, the metadata values are aggregated
-#' using the specified function.
 #' 
-#' \strong{Automatic column detection:} If \code{colNames} is \code{NULL}, the
-#' function identifies columns that exist in all input peak sets and adds only
-#' those columns. This ensures consistency across peak sets.
+#' \strong{How the function works:}
+#' \enumerate{
+#'   \item Validates that \code{ol} is an \code{overlappingPeaks} object with
+#'         required elements
+#'   \item If \code{colNames} is \code{NULL}, automatically detects columns
+#'         present in all peak sets from \code{ol$all.peaks}
+#'   \item Validates that all specified columns exist in all peak sets and have
+#'         identical classes
+#'   \item Extracts specified metadata columns from all original peaks
+#'   \item For each overlap group in \code{peaklist}:
+#'         \itemize{
+#'           \item Extracts peak indices from \code{peakNames} (which contains
+#'                 names of original peaks that were merged)
+#'           \item Groups peaks by their merged region (using the structure of
+#'                 \code{peakNames})
+#'           \item Aggregates metadata values within each group using \code{FUN}
+#'           \item Adds aggregated metadata as new columns to the merged region
+#'         }
+#'   \item Returns the modified \code{overlappingPeaks} object
+#' }
 #' 
-#' \strong{Metadata aggregation:} When peaks from different sets overlap, their
-#' metadata values are combined using \code{FUN}. For example:
+#' \strong{Automatic column detection:}
+#' If \code{colNames} is \code{NULL}, the function:
 #' \itemize{
-#'   \item \code{FUN = c}: Concatenates values (useful for IDs, names)
-#'   \item \code{FUN = mean}: Computes mean (useful for scores, signals)
-#'   \item \code{FUN = max}: Takes maximum (useful for p-values, confidence)
+#'   \item Collects all column names from all peak sets in \code{ol$all.peaks}
+#'   \item Identifies columns that appear in all peak sets
+#'   \item Uses only those common columns for aggregation
+#'   \item Stops with an error if no common columns are found
+#' }
+#' This ensures consistency and prevents errors from missing columns.
+#' 
+#' \strong{Metadata aggregation process:}
+#' When peaks are merged by \code{findOverlapsOfPeaks}, multiple original peaks
+#' can contribute to a single merged region. The \code{peakNames} field in each
+#' merged region contains a \code{CharacterList} with the names of original
+#' peaks that were merged. The aggregation process:
+#' \itemize{
+#'   \item Maps peak names to indices in \code{all.peaks}
+#'   \item Groups peaks by their merged region (each element in
+#'         \code{peakNames} represents one merged region)
+#'   \item For each merged region, collects metadata values from all
+#'         contributing peaks
+#'   \item Applies \code{FUN} to aggregate values within each group
+#'   \item Adds the aggregated value as a metadata column to the merged region
+#' }
+#' 
+#' \strong{Example aggregation scenarios:}
+#' \itemize{
+#'   \item \code{FUN = c}: If 3 peaks with scores [10, 20, 30] are merged, the
+#'         aggregated score is \code{c(10, 20, 30)} (a vector)
+#'   \item \code{FUN = mean}: Same peaks yield aggregated score = 20
+#'   \item \code{FUN = max}: Same peaks yield aggregated score = 30
+#'   \item \code{FUN = min}: Same peaks yield aggregated score = 10
+#' }
+#' 
+#' \strong{Column class requirements:}
+#' All specified metadata columns must have identical classes across all peak
+#' sets. For example:
+#' \itemize{
+#'   \item If \code{score} is \code{numeric} in one set, it must be
+#'         \code{numeric} in all sets
+#'   \item If \code{id} is \code{character} in one set, it must be
+#'         \code{character} in all sets
+#' }
+#' This ensures that aggregation functions work correctly and consistently.
+#' 
+#' \strong{Error handling:}
+#' The function performs extensive validation:
+#' \itemize{
+#'   \item Checks that \code{ol} is a valid \code{overlappingPeaks} object
+#'   \item Verifies required elements (\code{all.peaks}, \code{peaklist})
+#'   \item Validates that all specified columns exist in all peak sets
+#'   \item Ensures column classes match across peak sets
+#'   \item Validates peak indices in \code{peakNames}
 #' }
 #' 
 #' @note
 #' \itemize{
-#'   \item All specified columns must exist in all input peak sets.
+#'   \item All specified columns must exist in all input peak sets (from
+#'         \code{ol$all.peaks})
 #'   \item The classes of metadata columns must be identical across all peak
-#'     sets.
-#'   \item The function modifies the input object in place (returns the same
-#'     object with added metadata).
+#'         sets for aggregation to work correctly
+#'   \item The function modifies the \code{peaklist} element of the input
+#'         object and returns the modified object
+#'   \item If an element in \code{peaklist} lacks a \code{peakNames} field, it
+#'         is skipped with a warning
+#'   \item Empty overlap groups are skipped
 #' }
 #' 
 #' @export
 #' @importFrom S4Vectors mcols aggregate
-#' @importFrom GenomicRanges GRangesList
 #' @author Jianhong Ou
-#' @seealso \code{\link{findOverlapsOfPeaks}} for creating the overlap object
+#' @seealso \code{\link{findOverlapsOfPeaks}} for creating the overlap object,
+#'          \code{\link[S4Vectors]{aggregate}} for the aggregation function
 #' @keywords misc
 #' @examples
 #' 
@@ -86,26 +191,48 @@
 #' # Find overlaps
 #' ol <- findOverlapsOfPeaks(peaks1, peaks2)
 #' 
-#' # Add all common metadata columns (automatic detection)
+#' # Example 1: Add all common metadata columns (automatic detection)
+#' # This will detect and add 'score', 'id', and 'pvalue' columns
 #' ol_with_metadata <- addMetadata(ol)
 #' 
-#' # Add specific columns with custom aggregation function
+#' # Example 2: Add specific columns with mean aggregation
+#' # Useful for continuous values like scores or signals
 #' ol_mean_scores <- addMetadata(ol, colNames = "score", FUN = mean)
-#' ol_max_pvalues <- addMetadata(ol, colNames = "pvalue", FUN = min)
+#' 
+#' # Example 3: Add p-values with minimum aggregation
+#' # Lower p-values are more significant, so min preserves the best value
+#' ol_min_pvalues <- addMetadata(ol, colNames = "pvalue", FUN = min)
+#' 
+#' # Example 4: Concatenate IDs to preserve all peak identifiers
+#' # Default behavior - keeps all values from overlapping peaks
+#' ol_all_ids <- addMetadata(ol, colNames = "id", FUN = c)
+#' 
+#' # Example 5: Add multiple columns with different aggregation functions
+#' # Note: All columns use the same FUN, so specify columns separately
+#' # if you need different aggregation methods
+#' ol_scores <- addMetadata(ol, colNames = "score", FUN = mean)
+#' ol_scores <- addMetadata(ol_scores, colNames = "id", FUN = c)
+#' 
+#' # Example 6: Use max for scores (keep highest signal)
+#' ol_max_scores <- addMetadata(ol, colNames = "score", FUN = max)
 #' 
 addMetadata <- function(ol, colNames = NULL, FUN = c, ...) {
     # Input validation
     if (!inherits(ol, "overlappingPeaks")) {
         stop("'ol' must be an object of class 'overlappingPeaks' ",
-             "(output from findOverlapsOfPeaks)")
+             "(output from findOverlapsOfPeaks)", call. = FALSE)
+    }
+    
+    if (!is.list(ol) || !"all.peaks" %in% names(ol)) {
+        stop("'ol' must be a list with an 'all.peaks' element", call. = FALSE)
     }
     
     if (length(ol$all.peaks) == 0L) {
-        stop("'ol$all.peaks' is empty")
+        stop("'ol$all.peaks' is empty", call. = FALSE)
     }
     
     if (!is.function(FUN)) {
-        stop("'FUN' must be a function")
+        stop("'FUN' must be a function", call. = FALSE)
     }
     
     peaks_list <- ol$all.peaks
@@ -121,13 +248,13 @@ addMetadata <- function(ol, colNames = NULL, FUN = c, ...) {
         
         if (length(colNames) == 0L) {
             stop("No common metadata columns found across all peak sets. ",
-                 "Please specify 'colNames' explicitly.")
+                 "Please specify 'colNames' explicitly.", call. = FALSE)
         }
     }
     
     # Validate colNames
     if (!is.character(colNames) || length(colNames) == 0L) {
-        stop("'colNames' must be a non-empty character vector")
+        stop("'colNames' must be a non-empty character vector", call. = FALSE)
     }
     
     # Check that all specified columns exist in all peak sets
@@ -135,7 +262,7 @@ addMetadata <- function(ol, colNames = NULL, FUN = c, ...) {
         missing_cols <- colNames[!colNames %in% colnames(mcols(peaks_list[[i]]))]
         if (length(missing_cols) > 0L) {
             stop("Column(s) '", paste(missing_cols, collapse = "', '"),
-                 "' not found in peak set ", i)
+                 "' not found in peak set ", i, call. = FALSE)
         }
     }
     
@@ -152,20 +279,40 @@ addMetadata <- function(ol, colNames = NULL, FUN = c, ...) {
     for (i in seq.int(2L, length(col_classes))) {
         if (!identical(col_classes[[1L]], col_classes[[i]])) {
             stop("Metadata column classes are not identical across peak sets. ",
-                 "Column classes must match for aggregation.")
+                 "Column classes must match for aggregation.", call. = FALSE)
         }
     }
     
     # Combine all peaks into a single GRanges object
     all_peaks <- unlist(GRangesList(peaks_list_subset), use.names = FALSE)
     
+    # Validate that peaklist exists
+    if (!"peaklist" %in% names(ol)) {
+        stop("'ol' must contain a 'peaklist' element", call. = FALSE)
+    }
+    
     # Add aggregated metadata to each overlap group
     ol$peaklist <- lapply(ol$peaklist, function(.ele) {
+        # Validate structure
+        if (!is.list(.ele) || !"peakNames" %in% names(.ele)) {
+            warning("Skipping element without 'peakNames'", call. = FALSE)
+            return(.ele)
+        }
+        
         # Get peak indices for this overlap group
         peak_indices <- unlist(.ele$peakNames)
         
+        if (length(peak_indices) == 0L) {
+            return(.ele)
+        }
+        
+        # Validate indices
+        if (any(peak_indices < 1L) || any(peak_indices > length(all_peaks))) {
+            stop("Invalid peak indices in overlap group", call. = FALSE)
+        }
+        
         # Aggregate metadata for overlapping peaks
-        group_ids <- rep(seq_along(.ele), lengths(.ele$peakNames))
+        group_ids <- rep(seq_along(.ele$peakNames), lengths(.ele$peakNames))
         aggregated_mcols <- aggregate(
             mcols(all_peaks[peak_indices]),
             by = list(addMetadata_group = group_ids),
@@ -174,11 +321,19 @@ addMetadata <- function(ol, colNames = NULL, FUN = c, ...) {
         )
         
         # Sort by group ID to maintain order
-        aggregated_mcols <- aggregated_mcols[order(aggregated_mcols$addMetadata_group), ]
+        aggregated_mcols <- aggregated_mcols[order(aggregated_mcols$addMetadata_group),
+                                             ,
+                                             drop = FALSE]
+        
+        # Extract only the metadata columns (exclude temporary grouping column)
+        metadata_cols <- colnames(aggregated_mcols)
+        metadata_cols <- metadata_cols[metadata_cols != "addMetadata_group"]
+        aggregated_mcols <- aggregated_mcols[, metadata_cols, drop = FALSE]
         
         # Add aggregated columns to the overlap result
         n_existing_cols <- ncol(mcols(.ele))
-        mcols(.ele) <- cbind(mcols(.ele), aggregated_mcols[, colNames, drop = FALSE])
+        mcols(.ele) <- cbind(mcols(.ele),
+                            aggregated_mcols[, colNames, drop = FALSE])
         
         # Update column names
         if (n_existing_cols > 0L) {

@@ -1,62 +1,240 @@
-#' Convert other common IDs to entrez gene ID.
+#' Convert gene IDs to Entrez Gene IDs
 #' 
-#' Convert other common IDs such as ensemble gene id, gene symbol, refseq id to
-#' entrez gene ID leveraging organism annotation dataset.  For example,
-#' org.Hs.eg.db is the dataset from orgs.Hs.eg.db package for human, while
-#' org.Mm.eg.db is the dataset from the org.Mm.eg.db package for mouse.
+#' @description 
+#' Converts common gene identifiers (Ensembl gene IDs, gene symbols, or RefSeq
+#' IDs) to Entrez Gene IDs using organism annotation packages from
+#' AnnotationDbi. This function provides a convenient interface to the ID
+#' mapping capabilities of AnnotationDbi organism packages (e.g.,
+#' \code{org.Hs.eg.db}, \code{org.Mm.eg.db}).
 #' 
+#' @param IDs A character vector of gene IDs to convert. Can be Ensembl gene
+#'        IDs, gene symbols, or RefSeq IDs depending on the \code{ID_type}
+#'        parameter. The function automatically removes \code{NA} values and
+#'        duplicates before conversion.
+#' @param orgAnn A character string specifying the name of the organism
+#'        annotation package. Common examples include:
+#'        \itemize{
+#'          \item \code{"org.Hs.eg.db"}: Human (Homo sapiens)
+#'          \item \code{"org.Mm.eg.db"}: Mouse (Mus musculus)
+#'          \item \code{"org.Rn.eg.db"}: Rat (Rattus norvegicus)
+#'          \item \code{"org.Dm.eg.db"}: Fruit fly (Drosophila melanogaster)
+#'          \item \code{"org.Ce.eg.db"}: Worm (Caenorhabditis elegans)
+#'        }
+#'        The package must be installed and loaded (via \code{library()}) before
+#'        use. The function extracts the organism prefix (e.g., "org.Hs.eg" from
+#'        "org.Hs.eg.db") to construct Bimap object names.
+#' @param ID_type A character string specifying the type of input IDs. Must be
+#'        one of:
+#'        \itemize{
+#'          \item \code{"ensembl_gene_id"}: Ensembl gene IDs (default), e.g.,
+#'                "ENSG00000115956"
+#'          \item \code{"gene_symbol"}: Gene symbols (official gene names), e.g.,
+#'                "TP53", "BRCA1"
+#'          \item \code{"refseq_id"}: RefSeq IDs, e.g., "NM_000546"
+#'        }
+#'        This parameter determines which Bimap object is used for mapping:
+#'        \code{ENSEMBL2EG}, \code{SYMBOL2EG}, or \code{REFSEQ2EG}.
 #' 
-#' @param IDs a vector of IDs such as ensembl gene ids
-#' @param orgAnn organism annotation dataset such as org.Hs.eg.db
-#' @param ID_type type of ID: can be ensemble_gene_id, gene_symbol or refseq_id
-#' @return vector of entrez ids
+#' @return Returns a character vector of unique Entrez Gene IDs. The result:
+#'        \itemize{
+#'          \item Contains only successfully mapped IDs
+#'          \item Excludes IDs that cannot be converted (unmappable IDs)
+#'          \item Excludes \code{NA} values and duplicates
+#'          \item If an input ID maps to multiple Entrez IDs, only the first
+#'                one is returned
+#'          \item The order may differ from the input order
+#'        }
+#'        The length of the output may be shorter than the input if some IDs
+#'        cannot be mapped.
+#' 
+#' @details
+#' 
+#' \strong{How the function works:}
+#' \enumerate{
+#'   \item Validates input parameters (character vectors, single package name)
+#'   \item Extracts the organism prefix from \code{orgAnn} (removes ".db"
+#'         suffix)
+#'   \item Determines the appropriate Bimap object name based on \code{ID_type}:
+#'         \itemize{
+#'           \item \code{"ensembl_gene_id"} → \code{ENSEMBL2EG}
+#'           \item \code{"gene_symbol"} → \code{SYMBOL2EG}
+#'           \item \code{"refseq_id"} → \code{REFSEQ2EG}
+#'         }
+#'   \item Loads the Bimap object from the annotation package (e.g.,
+#'         \code{org.Hs.egENSEMBL2EG})
+#'   \item Removes \code{NA} values and duplicates from input IDs
+#'   \item Maps each input ID to Entrez Gene ID(s) using the Bimap
+#'   \item If multiple Entrez IDs exist for one input ID, takes the first one
+#'   \item Returns unique Entrez Gene IDs
+#' }
+#' 
+#' \strong{Bimap objects:}
+#' The function uses AnnotationDbi Bimap objects, which are bidirectional
+#' mapping structures. The specific Bimap used depends on \code{ID_type}:
+#' \itemize{
+#'   \item \code{ENSEMBL2EG}: Maps Ensembl gene IDs to Entrez Gene IDs
+#'   \item \code{SYMBOL2EG}: Maps gene symbols to Entrez Gene IDs
+#'   \item \code{REFSEQ2EG}: Maps RefSeq IDs to Entrez Gene IDs
+#' }
+#' These Bimap objects are part of the organism annotation packages and must
+#' be available in the R session.
+#' 
+#' \strong{Multiple mappings:}
+#' Some input IDs may map to multiple Entrez Gene IDs (e.g., due to gene
+#' aliases, alternative transcripts, or database inconsistencies). In such
+#' cases, the function returns only the first Entrez ID from the mapping. If
+#' you need all possible mappings, consider using the AnnotationDbi functions
+#' directly.
+#' 
+#' \strong{Unmappable IDs:}
+#' IDs that cannot be mapped to Entrez Gene IDs are silently excluded from the
+#' result. This can happen if:
+#' \itemize{
+#'   \item The ID doesn't exist in the annotation database
+#'   \item The ID format is incorrect
+#'   \item The ID is from a different organism than the annotation package
+#'   \item The ID is deprecated or obsolete
+#' }
+#' 
+#' \strong{Requirements:}
+#' \itemize{
+#'   \item The specified annotation package (e.g., \code{org.Hs.eg.db}) must be
+#'         installed (available from Bioconductor)
+#'   \item The package must be loaded in the R session (via
+#'         \code{library(org.Hs.eg.db)})
+#'   \item The package must contain the appropriate Bimap object for the
+#'         specified \code{ID_type}
+#' }
+#' 
+#' \strong{Error handling:}
+#' The function performs validation and provides informative error messages for:
+#' \itemize{
+#'   \item Invalid input types (non-character vectors)
+#'   \item Missing or incorrectly formatted annotation package names
+#'   \item Unsupported \code{ID_type} values
+#'   \item Missing Bimap objects (package not loaded or object doesn't exist)
+#'   \item Invalid annotation packages (not AnnDbBimap objects)
+#' }
+#' 
+#' @note
+#' \itemize{
+#'   \item Input IDs are automatically deduplicated before conversion
+#'   \item \code{NA} values in the input are removed before conversion
+#'   \item The function takes the first Entrez ID if multiple mappings exist
+#'   \item The output order may differ from the input order
+#'   \item The annotation package must be loaded (not just installed) before
+#'         calling this function
+#' }
+#' 
+#' @seealso
+#' \itemize{
+#'   \item AnnotationDbi organism packages:
+#'         \code{\link[AnnotationDbi]{AnnotationDbi}}
+#'   \item For human: \code{\link[org.Hs.eg.db]{org.Hs.eg.db}}
+#'   \item For mouse: \code{\link[org.Mm.eg.db]{org.Mm.eg.db}}
+#'   \item To see available organism packages:
+#'         \url{https://bioconductor.org/packages/release/data/annotation/}
+#' }
+#' 
 #' @author Lihua Julie Zhu
 #' @keywords misc
 #' @export
+#' 
 #' @examples
 #' 
-#' ensemblIDs = c("ENSG00000115956", "ENSG00000071082", "ENSG00000071054",
-#'  "ENSG00000115594", "ENSG00000115594", "ENSG00000115598", "ENSG00000170417")
+#' # Example 1: Convert Ensembl gene IDs to Entrez IDs (human)
+#' ensemblIDs <- c("ENSG00000115956", "ENSG00000071082", "ENSG00000071054",
+#'                 "ENSG00000115594", "ENSG00000115594", "ENSG00000115598", 
+#'                 "ENSG00000170417")
 #' library(org.Hs.eg.db)
-#' entrezIDs = convert2EntrezID(IDs=ensemblIDs, orgAnn="org.Hs.eg.db",
-#'  ID_type="ensembl_gene_id")
+#' entrezIDs <- convert2EntrezID(IDs = ensemblIDs, 
+#'                                orgAnn = "org.Hs.eg.db",
+#'                                ID_type = "ensembl_gene_id")
+#' entrezIDs
 #' 
-convert2EntrezID <- function(IDs, orgAnn, ID_type="ensembl_gene_id")
-{
-    GOgenome = sub(".db","",orgAnn)
-    if (ID_type == "ensembl_gene_id")
-    {
-        orgAnn <- get(paste(GOgenome,"ENSEMBL2EG", sep=""))
-    }
-    else if (ID_type == "gene_symbol")
-    {
-        orgAnn <- get(paste(GOgenome,"SYMBOL2EG", sep=""))
-    }
-    else if (ID_type == "refseq_id")
-    {
-        orgAnn <- get(paste(GOgenome,"REFSEQ2EG", sep=""))
-    }
-    else
-    {
-        stop("Currently only the following type of IDs are supported:",
-             "ensembl_gene_id, refseq_id and gene_symbol!")
+#' # Example 2: Convert gene symbols to Entrez IDs (human)
+#' gene_symbols <- c("TP53", "BRCA1", "BRCA2", "MYC", "EGFR")
+#' library(org.Hs.eg.db)
+#' entrezIDs <- convert2EntrezID(IDs = gene_symbols,
+#'                                orgAnn = "org.Hs.eg.db",
+#'                                ID_type = "gene_symbol")
+#' entrezIDs
+#' 
+#' # Example 3: Convert RefSeq IDs to Entrez IDs (human)
+#' refseqIDs <- c("NM_000546", "NM_007294", "NM_000059")
+#' library(org.Hs.eg.db)
+#' entrezIDs <- convert2EntrezID(IDs = refseqIDs,
+#'                                orgAnn = "org.Hs.eg.db",
+#'                                ID_type = "refseq_id")
+#' entrezIDs
+#' 
+#' # Example 4: Convert Ensembl IDs to Entrez IDs (mouse)
+#' mouse_ensembl <- c("ENSMUSG00000000001", "ENSMUSG00000000003",
+#'                    "ENSMUSG00000000028")
+#' library(org.Mm.eg.db)
+#' mouse_entrez <- convert2EntrezID(IDs = mouse_ensembl,
+#'                                  orgAnn = "org.Mm.eg.db",
+#'                                  ID_type = "ensembl_gene_id")
+#' mouse_entrez
+#' 
+#' # Example 5: Handling duplicates and NA values
+#' # The function automatically removes duplicates and NA values
+#' mixed_ids <- c("ENSG00000115956", "ENSG00000115956", NA,
+#'                "ENSG00000071082", "ENSG00000071082")
+#' library(org.Hs.eg.db)
+#' unique_entrez <- convert2EntrezID(IDs = mixed_ids,
+#'                                   orgAnn = "org.Hs.eg.db",
+#'                                   ID_type = "ensembl_gene_id")
+#' unique_entrez  # Duplicates and NA are removed
+convert2EntrezID <- function(IDs, orgAnn, ID_type = "ensembl_gene_id") {
+    if (!is.character(IDs)) {
+        stop("'IDs' must be a character vector", call. = FALSE)
     }
     
-    if(!is(orgAnn, "AnnDbBimap"))
-    {
-        stop("orgAnn is not a valid annotation dataset! ",
-             "For example, orgs.Hs.eg.db package for human",
-			 "and the org.Mm.eg.db package for mouse.")
+    if (!is.character(orgAnn) || length(orgAnn) != 1L) {
+        stop("'orgAnn' must be a single character string", call. = FALSE)
     }
-    xx <- as.list(orgAnn)
-    IDs = unique(IDs[!is.na(IDs)])
-    x = do.call(rbind, lapply(IDs,function(x1)
-    {
-        r= xx[names(xx)==x1]
-        if (length(r) >0)
-        {
-            r[[1]][1]
+    
+    GOgenome <- sub(".db$", "", orgAnn)
+    
+    # Get the appropriate Bimap object
+    bimap_name <- switch(ID_type,
+                         ensembl_gene_id = "ENSEMBL2EG",
+                         gene_symbol = "SYMBOL2EG",
+                         refseq_id = "REFSEQ2EG",
+                         stop("Currently only the following ID types are supported: ",
+                              "ensembl_gene_id, refseq_id, and gene_symbol",
+                              call. = FALSE)
+    )
+    
+    orgAnn_obj <- tryCatch(
+        get(paste0(GOgenome, bimap_name)),
+        error = function(e) {
+            stop("Could not load Bimap object '",
+                 paste0(GOgenome, bimap_name),
+                 "'. Make sure the package '", orgAnn, "' is installed and loaded.",
+                 call. = FALSE)
+        }
+    )
+    
+    if (!inherits(orgAnn_obj, "AnnDbBimap")) {
+        stop("'orgAnn' is not a valid annotation dataset. ",
+             "For example, org.Hs.eg.db package for human ",
+             "and org.Mm.eg.db package for mouse.",
+             call. = FALSE)
+    }
+    
+    xx <- as.list(orgAnn_obj)
+    IDs <- unique(IDs[!is.na(IDs)])
+    
+    x <- do.call(rbind, lapply(IDs, function(x1) {
+        r <- xx[names(xx) == x1]
+        if (length(r) > 0L) {
+            r[[1L]][1L]
+        } else {
+            NULL
         }
     }))
-    unique(x)
+    
+    unique(x[!is.null(x)])
 }

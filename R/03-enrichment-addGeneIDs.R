@@ -1,65 +1,140 @@
-#' Add common IDs to annotated peaks such as gene symbol, entrez ID, 
-#' ensembl gene id and refseq id.
+#' Add common gene identifiers to annotated peaks
 #' 
-#' @description Add common IDs to annotated peaks such as gene symbol, 
-#' entrez ID, ensembl gene id and refseq id leveraging organism annotation 
-#' dataset. For example, org.Hs.eg.db is the dataset from orgs.Hs.eg.db 
-#' package for human, while org.Mm.eg.db is the dataset from the org.Mm.eg.db
-#' package for mouse.
+#' @description 
+#' Adds common gene identifiers (such as gene symbol, Entrez ID, Ensembl gene ID,
+#' and RefSeq ID) to annotated peaks by leveraging organism annotation databases
+#' or biomaRt. This function is useful for enriching peak annotations with
+#' additional gene identifiers that may be needed for downstream analysis,
+#' visualization, or integration with other datasets.
 #' 
-#' @param annotatedPeak GRanges or a vector of feature IDs.
-#' @param orgAnn organism annotation dataset such as org.Hs.eg.db. Can be a 
-#' character string (e.g., "org.Hs.eg.db") or an OrgDb object (which will be 
-#' converted to character).
-#' @param IDs2Add a vector of annotation identifiers to be added
-#' @param feature_id_type type of ID to be annotated, default is 
-#' ensembl_gene_id
-#' @param silence TRUE or FALSE. If TRUE, will not show unmapped entrez id
-#' for feature ids.
-#' @param mart mart object, see \link[biomaRt:useMart]{useMart} of biomaRt
-#' package for details
-#' @details One of orgAnn and mart should be assigned. 
-#' \itemize{    
-#'   \item If orgAnn is given, parameter feature_id_type should be 
-#'   ensembl_gene_id, entrez_id, gene_symbol, gene_alias or refseq_id.
-#'   And parameter IDs2Add can be set to any combination of identifiers 
-#'   such as "accnum", "ensembl", "ensemblprot", "ensembltrans", "entrez_id",
-#'   "enzyme", "genename", "pfam", "pmid", "prosite", "refseq", "symbol", 
-#'   "unigene" and "uniprot". Some IDs are unique to an organism, 
-#'   such as "omim" for org.Hs.eg.db and "mgi" for org.Mm.eg.db.
-#'   
-#'   Here is the definition of different IDs : 
-#'     \itemize{
-#'       \item accnum: GenBank accession numbers
-#'       \item ensembl: Ensembl gene accession numbers
-#'       \item ensemblprot: Ensembl protein accession numbers
-#'       \item ensembltrans: Ensembl transcript accession numbers
-#'       \item entrez_id: entrez gene identifiers
-#'       \item enzyme: EC numbers
-#'       \item genename: gene name
-#'       \item pfam: Pfam identifiers
-#'       \item pmid: PubMed identifiers
-#'       \item prosite: PROSITE identifiers
-#'       \item refseq: RefSeq identifiers
-#'       \item symbol: gene abbreviations
-#'       \item unigene: UniGene cluster identifiers
-#'       \item uniprot: Uniprot accession numbers
-#'       \item omim: OMIM(Mendelian Inheritance in Man) identifiers
-#'       \item mgi: Jackson Laboratory MGI gene accession numbers
-#'     }
-#'   
-#'   \item If mart is used instead of orgAnn, for valid parameter 
-#'   feature_id_type and IDs2Add parameters, please refer to 
-#'   \link[biomaRt:getBM]{getBM} in bioMart package. 
-#'   Parameter feature_id_type should be one valid filter name listed by 
-#'   \link[biomaRt:listFilters]{listFilters(mart)} such as ensembl_gene_id.
-#'   And parameter IDs2Add should be one or more valid attributes name listed 
-#'   by \link[biomaRt:listAttributes]{listAttributes(mart)} such as 
-#'   external_gene_id, entrezgene, wikigene_name, or mirbase_transcript_name.
-#'   
+#' The function supports two annotation sources:
+#' \itemize{
+#'   \item \strong{Organism annotation databases} (via \code{orgAnn}): Uses
+#'         AnnotationDbi-based packages like \code{org.Hs.eg.db} for human or
+#'         \code{org.Mm.eg.db} for mouse. These provide fast, local annotation
+#'         lookups.
+#'   \item \strong{biomaRt} (via \code{mart}): Uses online Ensembl or other
+#'         biomaRt databases for annotation. Requires internet connection but
+#'         provides access to the latest annotations.
 #' }
-#' @return GRanges if the input is a GRanges (with added ID columns in mcols), 
-#' or a data.frame if input is a character vector.
+#' 
+#' @param annotatedPeak A \link[GenomicRanges:GRanges-class]{GRanges} object
+#'        with a \code{feature} metadata column containing feature IDs, or a
+#'        character vector of feature IDs. If a GRanges object, the function
+#'        extracts unique feature IDs from \code{annotatedPeak$feature} and
+#'        adds the new ID columns to the metadata. If a character vector, the
+#'        function returns a data frame mapping feature IDs to the requested
+#'        identifiers.
+#' @param orgAnn A character string specifying an organism annotation database
+#'        package name (e.g., \code{"org.Hs.eg.db"} for human,
+#'        \code{"org.Mm.eg.db"} for mouse). The package must be installed and
+#'        will be loaded automatically. Alternatively, an \code{OrgDb} object
+#'        can be provided, which will be converted to its package name.
+#'        Required if \code{mart} is not provided.
+#' @param IDs2Add A character vector specifying which annotation identifiers
+#'        to add. Default is \code{c("symbol")}. The available options depend
+#'        on whether \code{orgAnn} or \code{mart} is used (see Details).
+#' @param feature_id_type A character string specifying the type of ID in the
+#'        input feature column. Default is \code{"ensembl_gene_id"}. When using
+#'        \code{orgAnn}, must be one of: \code{"ensembl_gene_id"},
+#'        \code{"entrez_id"}, \code{"gene_symbol"}, \code{"gene_alias"}, or
+#'        \code{"refseq_id"}. When using \code{mart}, must be a valid filter
+#'        name from \code{listFilters(mart)}.
+#' @param silence A logical value. If \code{TRUE} (default), suppresses
+#'        messages about unmapped IDs and progress updates. If \code{FALSE},
+#'        displays messages when feature IDs cannot be mapped to Entrez IDs
+#'        and when adding each identifier.
+#' @param mart A \code{Mart} object from the \code{biomaRt} package. Can be
+#'        created using \code{\link[biomaRt:useMart]{useMart}}. Required if
+#'        \code{orgAnn} is not provided.
+#' 
+#' @details 
+#' \strong{One of \code{orgAnn} or \code{mart} must be provided.}
+#' 
+#' \strong{Using \code{orgAnn} (AnnotationDbi-based databases):} 
+#' \itemize{
+#'   \item \code{feature_id_type} must be one of: \code{"ensembl_gene_id"},
+#'         \code{"entrez_id"}, \code{"gene_symbol"}, \code{"gene_alias"}, or
+#'         \code{"refseq_id"}. The function first maps these IDs to Entrez IDs
+#'         (if not already Entrez IDs), then uses Entrez IDs as the key to
+#'         retrieve additional identifiers.
+#'   \item \code{IDs2Add} can be any combination of the following identifiers:
+#'         \itemize{
+#'           \item \code{"accnum"}: GenBank accession numbers
+#'           \item \code{"ensembl"}: Ensembl gene accession numbers
+#'           \item \code{"ensemblprot"}: Ensembl protein accession numbers
+#'           \item \code{"ensembltrans"}: Ensembl transcript accession numbers
+#'           \item \code{"entrez_id"}: Entrez gene identifiers
+#'           \item \code{"enzyme"}: EC (Enzyme Commission) numbers
+#'           \item \code{"genename"}: Full gene names
+#'           \item \code{"pfam"}: Pfam protein domain identifiers
+#'           \item \code{"pmid"}: PubMed identifiers
+#'           \item \code{"prosite"}: PROSITE protein domain identifiers
+#'           \item \code{"refseq"}: RefSeq identifiers
+#'           \item \code{"symbol"}: Gene symbols (abbreviations)
+#'           \item \code{"unigene"}: UniGene cluster identifiers
+#'           \item \code{"uniprot"}: UniProt accession numbers
+#'           \item \code{"omim"}: OMIM (Online Mendelian Inheritance in Man)
+#'                 identifiers (human only, for \code{org.Hs.eg.db})
+#'           \item \code{"mgi"}: Jackson Laboratory MGI gene accession numbers
+#'                 (mouse only, for \code{org.Mm.eg.db})
+#'         }
+#'   \item The function handles one-to-many mappings (e.g., one Ensembl ID
+#'         mapping to multiple Entrez IDs) by condensing multiple values into
+#'         semicolon-separated strings.
+#'   \item If a feature ID cannot be mapped to an Entrez ID, it will be
+#'         excluded from the output (unless \code{silence = FALSE}, in which
+#'         case a message is displayed).
+#' }
+#' 
+#' \strong{Using \code{mart} (biomaRt):}
+#' \itemize{
+#'   \item \code{feature_id_type} must be a valid filter name from
+#'         \code{\link[biomaRt:listFilters]{listFilters(mart)}}, such as
+#'         \code{"ensembl_gene_id"}.
+#'   \item \code{IDs2Add} must be one or more valid attribute names from
+#'         \code{\link[biomaRt:listAttributes]{listAttributes(mart)}}, such as
+#'         \code{"hgnc_symbol"}, \code{"entrezgene"}, \code{"wikigene_name"},
+#'         or \code{"mirbase_transcript_name"}.
+#'   \item The function directly queries biomaRt using
+#'         \code{\link[biomaRt:getBM]{getBM}} with the specified filters and
+#'         attributes.
+#'   \item Requires an active internet connection.
+#' }
+#' 
+#' \strong{Input processing:}
+#' \itemize{
+#'   \item Feature IDs are extracted from \code{annotatedPeak$feature} if input
+#'         is a GRanges object, or from the character vector itself.
+#'   \item Empty strings and NA values are automatically removed.
+#'   \item Only unique feature IDs are used for annotation lookup (duplicates
+#'         are handled during merging back to the original input).
+#' }
+#' 
+#' \strong{Output:}
+#' \itemize{
+#'   \item If input is a GRanges object: Returns the same GRanges object with
+#'         additional metadata columns for each identifier in \code{IDs2Add}.
+#'         The order of peaks is preserved.
+#'   \item If input is a character vector: Returns a data frame with columns
+#'         \code{feature_id_type} and all identifiers in \code{IDs2Add}.
+#'         Rows are ordered by the input feature IDs.
+#' }
+#' 
+#' @return 
+#' \itemize{
+#'   \item If \code{annotatedPeak} is a GRanges object: Returns a GRanges
+#'         object with the same structure, but with additional metadata columns
+#'         (one for each identifier in \code{IDs2Add}) added to
+#'         \code{mcols(annotatedPeak)}. Peaks that could not be mapped will
+#'         have \code{NA} values in the new columns.
+#'   \item If \code{annotatedPeak} is a character vector: Returns a data frame
+#'         with columns \code{feature_id_type} and all identifiers in
+#'         \code{IDs2Add}. Each row represents a unique feature ID and its
+#'         mapped identifiers. If multiple mappings exist (e.g., one Ensembl
+#'         ID mapping to multiple Entrez IDs), values are condensed into
+#'         semicolon-separated strings.
+#' }
 #' @references http://www.bioconductor.org/packages/release/data/annotation/
 #' @author Jianhong Ou, Lihua Julie Zhu
 #' @seealso \link[biomaRt:getBM]{getBM}, AnnotationDb
@@ -68,18 +143,44 @@
 #' @importFrom biomaRt getBM
 #' @keywords misc
 #' @examples
+#' \dontrun{
+#' ## Example 1: Using organism annotation database (org.Hs.eg.db)
 #' data(annotatedPeak)
 #' library(org.Hs.eg.db)
-#' addGeneIDs(annotatedPeak[1:6,],orgAnn="org.Hs.eg.db",
-#'            IDs2Add=c("symbol","omim"))
-#' ##addGeneIDs(annotatedPeak$feature[1:6],orgAnn="org.Hs.eg.db",
-#' ##           IDs2Add=c("symbol","genename"))
-#' if(interactive()){
-#'   mart <- useMart("ENSEMBL_MART_ENSEMBL",host="www.ensembl.org",
-#'                   dataset="hsapiens_gene_ensembl")
-#'   ##mart <- useMart(biomart="ensembl",dataset="hsapiens_gene_ensembl")
-#'   addGeneIDs(annotatedPeak[1:6,], mart=mart,
-#'              IDs2Add=c("hgnc_symbol","entrezgene"))
+#' 
+#' # Add gene symbols and OMIM IDs to annotated peaks
+#' annotated_with_ids <- addGeneIDs(annotatedPeak[1:6, ],
+#'                                   orgAnn = "org.Hs.eg.db",
+#'                                   IDs2Add = c("symbol", "omim"))
+#' 
+#' # Check the added columns
+#' mcols(annotated_with_ids)[, c("feature", "symbol", "omim")]
+#' 
+#' ## Example 2: Using character vector input (returns data frame)
+#' feature_ids <- annotatedPeak$feature[1:6]
+#' id_mapping <- addGeneIDs(feature_ids,
+#'                         orgAnn = "org.Hs.eg.db",
+#'                         IDs2Add = c("symbol", "genename"))
+#' head(id_mapping)
+#' 
+#' ## Example 3: Using biomaRt (requires internet connection)
+#' if (interactive()) {
+#'     library(biomaRt)
+#'     mart <- useMart("ENSEMBL_MART_ENSEMBL",
+#'                     host = "www.ensembl.org",
+#'                     dataset = "hsapiens_gene_ensembl")
+#'     
+#'     annotated_with_ids <- addGeneIDs(annotatedPeak[1:6, ],
+#'                                      mart = mart,
+#'                                      feature_id_type = "ensembl_gene_id",
+#'                                      IDs2Add = c("hgnc_symbol", "entrezgene"))
+#' }
+#' 
+#' ## Example 4: Adding multiple identifiers
+#' annotated_with_ids <- addGeneIDs(annotatedPeak[1:10, ],
+#'                                  orgAnn = "org.Hs.eg.db",
+#'                                  IDs2Add = c("symbol", "genename", "refseq",
+#'                                             "uniprot", "pmid"))
 #' }
 
 
@@ -97,7 +198,7 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
     }
     
     # Extract feature IDs from input
-    if (is(annotatedPeak, "GRanges")) {
+    if (inherits(annotatedPeak, "GRanges")) {
         feature_ids <- unique(annotatedPeak$feature)
     } else if (is.character(annotatedPeak)) {
         feature_ids <- unique(annotatedPeak)
@@ -118,11 +219,11 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
     }
     # Process orgAnn path
     if (!missing(orgAnn)) {
-        if (is(orgAnn, "OrgDb")) {
+        if (inherits(orgAnn, "OrgDb")) {
             orgAnn <- deparse(substitute(orgAnn))
         }
-        if (!is(orgAnn, "character")) {
-            stop("orgAnn must be a character.")
+        if (!is.character(orgAnn)) {
+            stop("orgAnn must be a character.", call. = FALSE)
         }
         if (!grepl(".eg.db", orgAnn, ignore.case = TRUE)) {
             stop("Annotation database must be *.eg.db", call. = FALSE)
@@ -130,13 +231,8 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
         
         # Check if package is installed and available
         if (!requireNamespace(orgAnn, quietly = TRUE)) {
-            stop("Package '", orgAnn, "' is not installed.",
-                 call. = FALSE)
-        }
-        
-        # Attach package namespace (required for accessing annotation objects)
-        if (!requireNamespace(orgAnn, quiet = TRUE)) {
-            stop("package '", orgAnn, "' is not installed.",
+            stop("Package '", orgAnn, "' is not installed. ",
+                 "Please install it with: BiocManager::install('", orgAnn, "')",
                  call. = FALSE)
         }
         orgAnn <- sub("\\.db$", "", orgAnn, ignore.case = TRUE)
@@ -191,10 +287,10 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
         entrezIDs <- unique(entrezIDs)
         entrezIDs <- entrezIDs[!is.na(entrezIDs)]
         
-        if (length(entrezIDs) == 0) {
+        if (length(entrezIDs) == 0L) {
             stop("No entrez identifier can be mapped by input data based on ",
-                 "the feature_id_type.\nPlease consider to use correct ",
-                 "feature_id_type, orgAnn or annotatedPeak\n", call. = FALSE)
+                 "the feature_id_type. Please consider to use correct ",
+                 "feature_id_type, orgAnn or annotatedPeak", call. = FALSE)
         }
         # Add additional IDs
         IDs2Add <- unique(IDs2Add)
@@ -224,7 +320,7 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
                     next
                 }
                 
-                if (!is(orgDB, "AnnDbBimap") && !is(orgDB, "IpiAnnDbMap")) {
+                if (!inherits(orgDB, "AnnDbBimap") && !inherits(orgDB, "IpiAnnDbMap")) {
                     if (!silence) {
                         message("The IDs2Add you input, \"", IDtoAdd, 
                                 "\", is not supported!\n")
@@ -249,7 +345,7 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
         m_ent <- m_ent[, c(feature_id_type, IDs2Add), drop = FALSE]
     } else {
         # Use biomaRt
-        if (missing(mart) || !is(mart, "Mart")) {
+        if (missing(mart) || !inherits(mart, "Mart")) {
             stop("No valid mart object is passed in!", call. = FALSE)
         }
         
@@ -276,13 +372,14 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
     }
     
     # Handle multiple entrez_id for single feature_id
-    if (ncol(m_ent) == 1) {
-        stop("None of IDs could be appended. Please double check IDs2Add.")
+    if (ncol(m_ent) == 1L) {
+        stop("None of IDs could be appended. Please double check IDs2Add.",
+             call. = FALSE)
     }
     
     duplicated_ids <- m_ent[duplicated(m_ent[, feature_id_type]), 
                             feature_id_type]
-    if (length(duplicated_ids) > 0) {
+    if (length(duplicated_ids) > 0L) {
         m_ent.duplicated <- m_ent[m_ent[, feature_id_type] %in% duplicated_ids, ]
         m_ent.duplicated <- condenseMatrixByColnames(as.matrix(m_ent.duplicated),
                                                       feature_id_type)
@@ -291,11 +388,11 @@ addGeneIDs <- function(annotatedPeak, orgAnn, IDs2Add = c("symbol"),
     }
     
     # Merge back to original input
-    if (is(annotatedPeak, "GRanges")) {
+    if (inherits(annotatedPeak, "GRanges")) {
         # Rearrange m_ent by annotatedPeak$feature
         # data.frame is very important for order...
-        orderlist <- data.frame(annotatedPeak$feature)
-        orderlist <- cbind(seq_len(nrow(orderlist)), orderlist)
+        orderlist <- data.frame(annotatedPeak$feature, stringsAsFactors = FALSE)
+        orderlist <- cbind(seq_along(annotatedPeak), orderlist)
         colnames(orderlist) <- c("orderid___", feature_id_type)
         m_ent <- merge(orderlist, m_ent, by = feature_id_type, all.x = TRUE)
         m_ent <- m_ent[order(m_ent[, "orderid___"]), 

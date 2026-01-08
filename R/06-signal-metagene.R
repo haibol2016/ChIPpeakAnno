@@ -1,101 +1,225 @@
-#' peak distance to features
+#' Plot metagene distribution of peaks around features
 #' 
-#' Bar plot for distance to features
+#' @description 
+#' Creates a 2D histogram (heatmap) showing the distribution of peaks around
+#' genomic features (e.g., TSS, gene ends, gene centers). This metagene plot
+#' visualizes binding patterns by displaying the density of peaks at different
+#' distances from feature reference points across multiple peak sets.
 #' 
-#' @details the bar heatmap is indicates the peaks around features. 
-#' @param peaks peak list, \link[GenomicRanges:GRanges-class]{GRanges} object or
-#' a \link[GenomicRanges:GRangesList-class]{GRangesList}.
-#' @param AnnotationData A \link[GenomicRanges:GRanges-class]{GRanges} object 
-#' or a \link[GenomicFeatures:TxDb-class]{TxDb} object.
-#' @param PeakLocForDistance Specify the location of peak for calculating
-#' distance,i.e., middle means using middle of the peak to calculate distance
-#' to feature, start means using start of the peak to calculate the distance to
-#' feature. To be compatible with previous version, by default using start
-#' @param FeatureLocForDistance Specify the location of feature for calculating
-#' distance,i.e., middle means using middle of the feature to calculate
-#' distance of peak to feature, TSS means using start of feature when
-#' feature is on plus strand and using end of feature when feature is on minus
-#' strand, geneEnd means using end of feature when feature is on plus strand
-#' and using start of feature when feature is on minus strand. 
-#' @param upstream,downstream numeric(1). Upstream or downstream region of
-#' features to plot.
+#' The plot uses a 2D binning approach where:
+#' \itemize{
+#'   \item X-axis: Distance from peaks to features (negative = upstream,
+#'         positive = downstream, 0 = at reference point)
+#'   \item Y-axis: Peak sets (one row per peak set)
+#'   \item Color intensity: Number of peaks in each distance bin
+#' }
+#' 
+#' This visualization is useful for identifying common binding patterns, such
+#' as enrichment at promoters (TSS), gene ends, or other regulatory regions. 
+#' @param peaks A \link[GenomicRanges:GRanges-class]{GRanges} object or a
+#'        \link[GenomicRanges:GRangesList-class]{GRangesList} containing one or
+#'        more peak sets. If a single \code{GRanges} is provided, it will be
+#'        converted to a \code{GRangesList} with one element. List names will be
+#'        used as labels on the y-axis.
+#' @param AnnotationData A \link[GenomicRanges:GRanges-class]{GRanges} object
+#'        or a \link[GenomicFeatures:TxDb-class]{TxDb} object containing
+#'        annotation features (e.g., genes). If a \code{TxDb} is provided, genes
+#'        are extracted using \code{genes()}. If a \code{GRanges} is provided
+#'        and ranges don't have names, names are auto-generated.
+#' @param PeakLocForDistance A character string specifying which part of the
+#'        peak to use for distance calculation. Options:
+#'        \itemize{
+#'          \item \code{"start"} (default): Uses the start position of the peak
+#'                (5' end for positive strand, 3' end for negative strand)
+#'          \item \code{"middle"}: Uses the center/middle position of the peak
+#'          \item \code{"end"}: Uses the end position of the peak (3' end for
+#'                positive strand, 5' end for negative strand)
+#'        }
+#'        Default is \code{"start"} for backward compatibility.
+#' @param FeatureLocForDistance A character string specifying which part of the
+#'        feature to use as the reference point for distance calculation.
+#'        Options:
+#'        \itemize{
+#'          \item \code{"TSS"} (default): Uses the transcription start site
+#'                (start of feature on plus strand, end of feature on minus strand)
+#'          \item \code{"middle"}: Uses the center/middle position of the feature
+#'          \item \code{"geneEnd"}: Uses the gene end (end of feature on plus
+#'                strand, start of feature on minus strand)
+#'        }
+#'        The distance calculation is strand-aware for \code{"TSS"} and
+#'        \code{"geneEnd"}.
+#' @param upstream A numeric value (length 1) specifying the upstream distance
+#'        (in base pairs) from the feature reference point to include in the
+#'        plot. Default is 100000 (100kb). Only peaks within this range are
+#'        considered for plotting.
+#' @param downstream A numeric value (length 1) specifying the downstream
+#'        distance (in base pairs) from the feature reference point to include
+#'        in the plot. Default is 100000 (100kb). Only peaks within this range
+#'        are considered for plotting.
+#' @return Returns a \code{\link[ggplot2]{ggplot}} object displaying a 2D
+#'        histogram (heatmap) of peak distributions. The plot can be further
+#'        customized using ggplot2 functions (e.g., \code{+ labs()},
+#'        \code{+ scale_fill_*()}, etc.).
+#' 
+#' @details
+#' 
+#' \strong{How the function works:}
+#' \enumerate{
+#'   \item Converts \code{peaks} to a \code{GRangesList} if needed
+#'   \item Extracts genes from \code{AnnotationData} if it's a \code{TxDb}
+#'   \item Aligns sequence level styles between peaks and annotation
+#'   \item Creates reference points for features based on
+#'         \code{FeatureLocForDistance}
+#'   \item Extends features by \code{upstream} and \code{downstream} to define
+#'         the search region
+#'   \item Finds overlaps between peaks and extended features
+#'   \item Calculates distances from peak reference points (based on
+#'         \code{PeakLocForDistance}) to feature reference points
+#'   \item Creates a data frame with distances and peak set labels
+#'   \item Generates a 2D histogram using \code{geom_bin2d()}
+#' }
+#' 
+#' \strong{Distance calculation:}
+#' Distances are calculated as the genomic distance between the peak reference
+#' point and the feature reference point. The sign of the distance indicates
+#' direction:
+#' \itemize{
+#'   \item Negative values: Peak is upstream of the feature reference point
+#'   \item Zero: Peak is at the feature reference point
+#'   \item Positive values: Peak is downstream of the feature reference point
+#' }
+#' 
+#' For strand-aware reference points (\code{"TSS"} and \code{"geneEnd"}),
+#' the distance sign is adjusted based on feature strand to ensure consistent
+#' interpretation (upstream = negative, downstream = positive).
+#' 
+#' \strong{Peak filtering:}
+#' Only peaks that overlap with the extended feature regions (within
+#' \code{upstream} and \code{downstream} of the feature reference point) are
+#' included in the plot. Peaks outside this range are excluded.
+#' 
+#' \strong{Sequence level alignment:}
+#' The function automatically aligns sequence level styles (e.g., "UCSC" vs
+#' "NCBI") between peaks and annotation data. Only peaks on chromosomes
+#' present in the annotation are included.
+#' 
+#' @author Jianhong Ou
+#' @seealso \code{\link{featureAlignedDistribution}} for average signal plots,
+#'          \code{\link{featureAlignedHeatmap}} for detailed heatmap
+#'          visualizations, \code{\link{annotatePeakInBatch}} for peak
+#'          annotation
+#' @keywords misc
 #' @export
 #' @importFrom ggplot2 geom_bin2d ggplot theme_bw aes_string
-#' @examples 
-#' path <- system.file("extdata", package="ChIPpeakAnno")
+#' @importFrom S4Vectors queryHits subjectHits
+#' @importFrom GenomicFeatures genes promoters
+#' @examples
+#' \dontrun{
+#' ## Example 1: Using TxDb annotation
+#' path <- system.file("extdata", package = "ChIPpeakAnno")
 #' files <- dir(path, "broadPeak")
-#' peaks <- sapply(file.path(path, files), toGRanges, format="broadPeak")
+#' peaks <- sapply(file.path(path, files), toGRanges, format = "broadPeak")
 #' peaks <- GRangesList(peaks)
 #' names(peaks) <- sub(".broadPeak", "", basename(names(peaks)))
 #' library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 #' metagenePlot(peaks, TxDb.Hsapiens.UCSC.hg19.knownGene)
+#' 
+#' ## Example 2: Using GRanges annotation with custom distances
+#' library(EnsDb.Hsapiens.v75)
+#' anno <- annoGR(EnsDb.Hsapiens.v75, feature = "gene")
+#' metagenePlot(peaks, anno, upstream = 50000, downstream = 50000)
+#' 
+#' ## Example 3: Using middle of peaks and features
+#' metagenePlot(peaks, TxDb.Hsapiens.UCSC.hg19.knownGene,
+#'              PeakLocForDistance = "middle",
+#'              FeatureLocForDistance = "middle")
+#' 
+#' ## Example 4: Focus on gene ends
+#' metagenePlot(peaks, TxDb.Hsapiens.UCSC.hg19.knownGene,
+#'              FeatureLocForDistance = "geneEnd",
+#'              upstream = 20000, downstream = 20000)
+#' 
+#' ## Example 5: Customize the plot
+#' p <- metagenePlot(peaks, TxDb.Hsapiens.UCSC.hg19.knownGene)
+#' p + ggplot2::labs(title = "Peak Distribution Around TSS",
+#'                   x = "Distance from TSS (bp)",
+#'                   y = "Peak Sets") +
+#'     ggplot2::scale_fill_viridis_c()
+#' }
 metagenePlot <- function(peaks, AnnotationData, 
-                     PeakLocForDistance = c("middle", "start", "end"),
-                     FeatureLocForDistance = c("TSS", "middle", "geneEnd"),
-                     upstream=100000, 
-                     downstream=100000){
-  stopifnot("peaks must be an object of GRanges or GRangesList"=
+                         PeakLocForDistance = c("middle", "start", "end"),
+                         FeatureLocForDistance = c("TSS", "middle", "geneEnd"),
+                         upstream = 100000, 
+                         downstream = 100000) {
+    stopifnot("peaks must be an object of GRanges or GRangesList" =
               inherits(peaks, c("GRanges", "GRangesList")))
-  FeatureLocForDistance <- match.arg(FeatureLocForDistance)
-  PeakLocForDistance <- match.arg(PeakLocForDistance)
-  if(is(peaks, "GRanges")){
-    n <- deparse(substitute(peaks))
-    peaks <- GRangesList(peaks)
-    names(peaks) <- n
-    isGRanges <- TRUE
-  }else{
-    isGRanges <- FALSE
-  }
-  stopifnot("AnnotationData must be an object of TxDb"=
-              inherits(AnnotationData, c("TxDb", "GRanges")))
-  if(is(AnnotationData, "TxDb")){
-    suppressMessages(g <- genes(AnnotationData))
-  }else{
-    g <- AnnotationData
-    if(length(names(g))!=length(g)){
-      names(g) <- paste0("ann", 
-                         formatC(seq_along(g), 
-                                 width = nchar(as.character(length(g))),
-                                 flag = 0))
+    FeatureLocForDistance <- match.arg(FeatureLocForDistance)
+    PeakLocForDistance <- match.arg(PeakLocForDistance)
+    
+    if (inherits(peaks, "GRanges")) {
+        n <- deparse(substitute(peaks))
+        peaks <- GRangesList(peaks)
+        names(peaks) <- n
     }
-  }
-  seql <- seqlevelsStyle(g)
-  seqn <- seqlevels(g)
-  peaks <- lapply(peaks, function(.ele){
-    seqlevelsStyle(.ele) <- seql[1]
-    .ele <- .ele[seqnames(.ele) %in% seqn]
-    seqlevels(.ele) <- seqn
-    .ele
-  })
-  features <- switch(FeatureLocForDistance,
-                     "TSS"=promoters(g, upstream=0, downstream=1),
-                     "geneEnd"=downstreams(g, upstream=1, downstream=0),
-                     "middle"=reCenterPeaks(g, width=1))
-  suppressWarnings({
-    features.ext <- switch(FeatureLocForDistance,
-                         "TSS"=promoters(g, upstream=upstream, 
-                                         downstream=downstream),
-                         "geneEnd"=downstreams(g, upstream=upstream, 
-                                           downstream=downstream),
-                         "middle"=reCenterPeaks(g, width=upstream+downstream))})
-  features.ext <- GenomicRanges::trim(features.ext)
-  ol <- lapply(peaks, function(.peaks){
-    findOverlaps(.peaks, features.ext)
-  })
-  pp <- mapply(ol, peaks, FUN=function(.ol, .peaks){
-    a <- .peaks[queryHits(.ol)]
-    a <- switch(PeakLocForDistance,
-                "start"=promoters(a, upstream=0, downstream=1),
-                "end"=downstreams(a, upstream=1, downstream=0),
-                "middle"=reCenterPeaks(a, width=1))
-    b <- features[subjectHits(.ol)]
-    d <- distance(a, b)
-    s <- pcompare(ranges(a), ranges(b))
-    s <- ifelse(as.character(strand(b)) == "-", -1*s, s)
-    d <- data.frame(id=names(b), distance=d*sign(s))
-  }, SIMPLIFY = FALSE)
-  dat <- do.call(rbind, pp)
-  dat$peaks <- rep(names(peaks), vapply(pp, nrow, FUN.VALUE = 0))
-  ggplot(dat, aes_string(x="distance", y="peaks")) + 
-    geom_bin2d()+theme_bw()
+    
+    stopifnot("AnnotationData must be an object of TxDb or GRanges" =
+              inherits(AnnotationData, c("TxDb", "GRanges")))
+    
+    if (inherits(AnnotationData, "TxDb")) {
+        suppressMessages(g <- genes(AnnotationData))
+    } else {
+        g <- AnnotationData
+        if (length(names(g)) != length(g)) {
+            names(g) <- paste0("ann", 
+                             formatC(seq_along(g), 
+                                     width = nchar(as.character(length(g))),
+                                     flag = "0"))
+        }
+    }
+    seql <- seqlevelsStyle(g)
+    seqn <- seqlevels(g)
+    peaks <- lapply(peaks, function(.ele) {
+        seqlevelsStyle(.ele) <- seql[1L]
+        .ele <- .ele[seqnames(.ele) %in% seqn]
+        seqlevels(.ele) <- seqn
+        .ele
+    })
+    
+    features <- switch(FeatureLocForDistance,
+                      "TSS" = promoters(g, upstream = 0L, downstream = 1L),
+                      "geneEnd" = downstreams(g, upstream = 1L, downstream = 0L),
+                      "middle" = reCenterPeaks(g, width = 1L))
+    
+    suppressWarnings({
+        features_ext <- switch(FeatureLocForDistance,
+                              "TSS" = promoters(g, upstream = upstream, 
+                                               downstream = downstream),
+                              "geneEnd" = downstreams(g, upstream = upstream, 
+                                                     downstream = downstream),
+                              "middle" = reCenterPeaks(g, 
+                                                      width = upstream + downstream))
+    })
+    features_ext <- GenomicRanges::trim(features_ext)
+    
+    ol <- lapply(peaks, function(.peaks) {
+        findOverlaps(.peaks, features_ext)
+    })
+    
+    pp <- mapply(ol, peaks, FUN = function(.ol, .peaks) {
+        a <- .peaks[queryHits(.ol)]
+        a <- switch(PeakLocForDistance,
+                   "start" = promoters(a, upstream = 0L, downstream = 1L),
+                   "end" = downstreams(a, upstream = 1L, downstream = 0L),
+                   "middle" = reCenterPeaks(a, width = 1L))
+        b <- features[subjectHits(.ol)]
+        d <- distance(a, b)
+        s <- pcompare(ranges(a), ranges(b))
+        s <- ifelse(as.character(strand(b)) == "-", -1L * s, s)
+        data.frame(id = names(b), distance = d * sign(s))
+    }, SIMPLIFY = FALSE)
+    
+    dat <- do.call(rbind, pp)
+    dat$peaks <- rep(names(peaks), vapply(pp, nrow, FUN.VALUE = integer(1)))
+    ggplot(dat, aes_string(x = "distance", y = "peaks")) + 
+        geom_bin2d() + theme_bw()
 }

@@ -2,9 +2,8 @@
 #' 
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Transcription Start
 #' Site (TSS) coordinates for \emph{Mus musculus} based on the GRCm38 (also
-#' known as mm10) genome assembly. This is the current reference genome
-#' assembly for mouse and is recommended for new analyses. The dataset was
-#' obtained from Ensembl via biomaRt and can be used directly with
+#' known as mm10) genome assembly. This dataset was obtained from Ensembl via 
+#' \code{\link{biomaRt}} and can be used directly with\code{\link{annotatePeakInBatch}} for
 #' \code{\link{annotatePeakInBatch}} for peak annotation.
 #' 
 #' @name TSS.mouse.GRCm38
@@ -20,13 +19,17 @@
 #' }
 #' 
 #' @details
+#' \strong{Important:} This dataset is provided for package examples and unit
+#' testing only. Users should generate their own TSS annotations to match their
+#' genome assembly using \code{\link{getAnnotation}} or EnsDb/TxDb packages.
+#' 
 #' This dataset contains TSS coordinates for all annotated genes in the mouse
 #' genome (GRCm38/mm10 assembly). The TSS is defined as the 5' end of the
 #' transcript for plus-strand genes and the 3' end for minus-strand genes.
 #' 
-#' \strong{Genome assembly:} GRCm38 (also known as mm10) - **Current reference**  
-#' \strong{Source:} Ensembl via biomaRt  
-#' \strong{Use case:} Direct annotation of ChIP-seq peaks to nearest TSS
+#' \strong{Genome assembly:} GRCm38 (also known as mm10) 
+#' \strong{Source:} Ensembl via \code{\link{biomaRt}}  
+#' \strong{Intended use:} Package examples and unit testing only
 #' 
 #' \strong{Data generation:}
 #' The dataset was obtained using:
@@ -39,8 +42,19 @@
 #' }
 #' 
 #' @note
-#' GRCm38 (mm10) is the current reference genome assembly for mouse. Ensure
-#' your peak coordinates are aligned to the same genome assembly (GRCm38/mm10).
+#' \strong{For users:} Do not use this dataset for your own peak annotation.
+#' Instead, generate annotations matching your genome assembly:
+#' \preformatted{
+#' # Recommended approach:
+#' library(biomaRt)
+#' mart <- useMart(biomart = "ensembl", dataset = "mmusculus_gene_ensembl")
+#' TSS <- getAnnotation(mart, featureType = "TSS")
+#' 
+#' # Or use EnsDb packages:
+#' library(EnsDb.Mmusculus.v79)
+#' annoData <- annoGR(EnsDb.Mmusculus.v79)
+#' }
+#' 
 #' 
 #' @seealso
 #' \code{\link{TSS.mouse.NCBIM37}}, \code{\link{annotatePeakInBatch}},

@@ -24,7 +24,7 @@
 #' genes.
 #' 
 #' \strong{Genome assembly:} Zv8 (also known as danRer7) - **Legacy assembly**  
-#' \strong{Source:} Ensembl archive via biomaRt  
+#' \strong{Source:} Ensembl archive via \code{\link{biomaRt}}  
 #' \strong{Use case:} Annotation of legacy datasets aligned to danRer7
 #' 
 #' \strong{Data generation:}

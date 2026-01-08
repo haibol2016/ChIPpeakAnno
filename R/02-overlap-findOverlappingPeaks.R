@@ -1,50 +1,148 @@
-##require library graph, RBGL
-
-
-#' Find the overlapping peaks for two peak ranges.
+#' Find overlapping peaks between two peak sets (deprecated)
 #' 
-#' Find the overlapping peaks for two input peak ranges.
+#' \strong{This function is deprecated.} Use \code{\link{findOverlapsOfPeaks}}
+#' instead, which supports multiple peak sets and provides better performance.
 #' 
-#' The new function findOverlapsOfPeaks is recommended.
-#' 
-#' Efficiently perform overlap queries with an interval tree implemented in
-#' IRanges.
+#' This function identifies overlapping genomic regions between two to five sets
+#' of peaks using an interval tree algorithm implemented in IRanges and graph
+#' algorithms to find connected components. It returns detailed information about
+#' the spatial relationships between overlapping peaks, including Venn counts and
+#' merged peak regions.
 #' 
 #' @aliases findOverlappingPeaks findOverlappingPeaks-deprecated
-#' @param Peaks1 GRanges: See example below.
-#' @param Peaks2 GRanges: See example below.
-#' @param maxgap,minoverlap Used in the internal call to \code{findOverlaps()}
-#' to detect overlaps. See
-#' \code{?\link[IRanges:findOverlaps-methods]{findOverlaps}} in the
-#' \pkg{IRanges} package for a description of these arguments.
-#' @param multiple TRUE or FALSE: TRUE may return multiple overlapping peaks in
-#' Peaks2 for one peak in Peaks1; FALSE will return at most one overlapping
-#' peaks in Peaks2 for one peak in Peaks1. This parameter is kept for backward
-#' compatibility, please use select.
-#' @param NameOfPeaks1 Name of the Peaks1, used for generating column name.
-#' @param NameOfPeaks2 Name of the Peaks2, used for generating column name.
-#' @param select all may return multiple overlapping peaks, first will return
-#' the first overlapping peak, last will return the last overlapping peak and
-#' arbitrary will return one of the overlapping peaks.
-#' @param annotate Include overlapFeature and shortestDistance in the
-#' OverlappingPeaks or not.  1 means yes and 0 means no. Default to 0.
-#' @param ignore.strand When set to TRUE, the strand information is ignored in
-#' the overlap calculations.
-#' @param connectedPeaks If multiple peaks involved in overlapping in several
-#' groups, set it to "merge" will count it as only 1, while set it to "min"
-#' will count it as the minimal involved peaks in any concered groups
-#' @param \dots Objects of \link[GenomicRanges:GRanges-class]{GRanges}: See
-#' also \code{\link{findOverlapsOfPeaks}}.
-#' @return \item{OverlappingPeaks}{a data frame consists of input peaks
-#' information with added information: overlapFeature (upstream: peak1 resides
-#' upstream of the peak2; downstream: peak1 resides downstream of the peak2;
-#' inside: peak1 resides inside the peak2 entirely; overlapStart: peak1
-#' overlaps with the start of the peak2; overlapEnd: peak1 overlaps with the
-#' end of the peak2; includeFeature: peak1 include the peak2 entirely) and
-#' shortestDistance (shortest distance between the overlapping peaks)}
-#' \item{MergedPeaks}{GRanges contains merged overlapping peaks}
+#' @param Peaks1 An optional \link[GenomicRanges:GRanges-class]{GRanges} object
+#'        containing the first set of peaks. If provided along with \code{Peaks2},
+#'        the function will return additional fields specific to the two-peak-set
+#'        comparison.
+#' @param Peaks2 An optional \link[GenomicRanges:GRanges-class]{GRanges} object
+#'        containing the second set of peaks. If provided along with \code{Peaks1},
+#'        the function will return additional fields specific to the two-peak-set
+#'        comparison.
+#' @param maxgap An integer specifying the maximum gap (in base pairs) allowed
+#'        between ranges for them to be considered overlapping. Default is
+#'        \code{-1L}, which means ranges must actually overlap (no gap allowed).
+#'        See \code{\link[IRanges:findOverlaps-methods]{findOverlaps}} for details.
+#' @param minoverlap An integer or numeric value specifying the minimum overlap
+#'        required. If an integer >= 1, it specifies the minimum number of base
+#'        pairs that must overlap. If \code{0 < minoverlap < 1}, it specifies the
+#'        minimum percentage of the interval that must be covered. Default is
+#'        \code{0L} (any overlap is considered).
+#' @param multiple A logical value (deprecated). This parameter is kept for
+#'        backward compatibility but is not used in the current implementation.
+#'        Use \code{select} parameter instead (though \code{select} is also not
+#'        currently used in the implementation).
+#' @param NameOfPeaks1 A character string specifying the name for \code{Peaks1}.
+#'        Used for generating column names and identifying peak sets in the output.
+#'        Default is \code{"TF1"}. If \code{Peaks1} is missing, defaults to
+#'        \code{"Peaks1"}.
+#' @param NameOfPeaks2 A character string specifying the name for \code{Peaks2}.
+#'        Used for generating column names and identifying peak sets in the output.
+#'        Default is \code{"TF2"}. If \code{Peaks2} is missing, defaults to
+#'        \code{"Peaks2"}.
+#' @param select A character string (deprecated). Options: \code{"all"} (return
+#'        multiple overlapping peaks), \code{"first"} (return the first overlapping
+#'        peak), \code{"last"} (return the last overlapping peak), or
+#'        \code{"arbitrary"} (return one of the overlapping peaks). This parameter
+#'        is kept for backward compatibility but is not currently used in the
+#'        implementation.
+#' @param annotate An integer (deprecated). \code{1} means include
+#'        \code{overlapFeature} and \code{shortestDistance} in the output,
+#'        \code{0} means do not include them. Default is \code{0}. This parameter
+#'        is kept for backward compatibility but is not currently used in the
+#'        implementation. The function always includes overlap annotations when
+#'        both \code{Peaks1} and \code{Peaks2} are provided.
+#' @param ignore.strand A logical value. When \code{TRUE} (default), strand
+#'        information is ignored in overlap calculations. When \code{FALSE}, only
+#'        ranges on the same strand are considered for overlap.
+#' @param connectedPeaks A character string specifying how to count
+#'        connected/overlapping peak groups. Options:
+#'        \itemize{
+#'          \item \code{"min"} (default): Counts the minimal number of involved
+#'                peaks in each group of connected/overlapped peaks
+#'          \item \code{"merge"}: Counts each group of connected peaks as only 1,
+#'                regardless of how many peaks are involved
+#'        }
+#' @param \dots Additional \link[GenomicRanges:GRanges-class]{GRanges} objects
+#'        containing peak sets. The function supports 2-5 peak sets total (including
+#'        \code{Peaks1}, \code{Peaks2}, and any additional sets provided via
+#'        \code{...}). Peak sets can also be provided as a single list of GRanges
+#'        objects. See \code{\link{findOverlapsOfPeaks}} for the recommended
+#'        approach.
+#' 
+#' @return Returns an object of class \code{overlappingPeaks} containing:
+#'        \itemize{
+#'          \item \code{venn_cnt}: An object of class \code{VennCounts} containing
+#'                the overlap counts for Venn diagram generation
+#'          \item \code{peaklist}: A named list of \code{GRanges} objects, where
+#'                each element represents peaks in a specific overlap category
+#'                (e.g., peaks unique to one set, peaks shared by two sets, etc.).
+#'                Names are constructed from the peak set names joined by "///"
+#'          \item \code{overlappingPeaks}: A named list of data frames, where each
+#'                data frame contains detailed annotation of overlapping peaks between
+#'                two specific peak sets. Each data frame includes:
+#'                \itemize{
+#'                  \item \code{peaks1}, \code{peaks2}: Peak names from each set
+#'                  \item Genomic coordinates (seqnames, start, end, strand, width)
+#'                  \item \code{overlapFeature}: Spatial relationship between peaks
+#'                        ("upstream", "downstream", "inside", "overlapStart",
+#'                        "overlapEnd", "includeFeature", "overlap")
+#'                  \item \code{shortestDistance}: Shortest distance between the
+#'                        overlapping peaks
+#'                }
+#'        }
+#'        
+#'        \strong{Additional fields when both \code{Peaks1} and \code{Peaks2} are provided:}
+#'        \itemize{
+#'          \item \code{OverlappingPeaks}: A data frame containing the overlap
+#'                annotations between \code{Peaks1} and \code{Peaks2} (same as
+#'                \code{overlappingPeaks[[sampleName]]})
+#'          \item \code{MergedPeaks}: A \code{GRanges} object containing merged
+#'                overlapping peaks between \code{Peaks1} and \code{Peaks2}
+#'          \item \code{Peaks1withOverlaps}: A \code{GRanges} object containing
+#'                all peaks from \code{Peaks1} that overlap with \code{Peaks2}
+#'          \item \code{Peaks2withOverlaps}: A \code{GRanges} object containing
+#'                all peaks from \code{Peaks2} that overlap with \code{Peaks1}
+#'        }
+#'        
+#'        \strong{Note:} The function uses graph algorithms (from the \code{graph}
+#'        and \code{RBGL} packages) to identify connected components of overlapping
+#'        peaks. Peaks with duplicated or missing names are automatically renamed
+#'        using zero-padded numeric indices.
+#' @details
+#' 
+#' \strong{Algorithm Overview:}
+#' 
+#' The function uses the following approach to identify overlapping peaks:
+#' \enumerate{
+#'   \item Combines all input peak sets into a single \code{GRangesList}
+#'   \item Uses \code{findOverlaps()} to identify all pairwise overlaps
+#'   \item Constructs a graph where nodes are peaks and edges represent overlaps
+#'   \item Uses graph algorithms to find connected components (groups of peaks
+#'         that are connected through overlaps)
+#'   \item Calculates Venn counts based on which peak sets are represented in
+#'         each connected component
+#'   \item Merges overlapping peaks within each component using \code{reduce()}
+#'   \item Annotates spatial relationships between overlapping peaks using
+#'         \code{getRelationship()}
+#' }
+#' 
+#' \strong{Metadata Handling:}
+#' 
+#' The function automatically identifies shared metadata columns across all peak
+#' sets and keeps only those columns where the data types are compatible (same
+#' class). This ensures that merged peaks can retain meaningful metadata.
+#' 
+#' \strong{Deprecated Parameters:}
+#' 
+#' The parameters \code{multiple}, \code{select}, and \code{annotate} are
+#' defined in the function signature for backward compatibility but are not
+#' currently used in the implementation. The function always returns all
+#' overlapping peaks with full annotations when both \code{Peaks1} and
+#' \code{Peaks2} are provided.
+#' 
 #' @author Lihua Julie Zhu
-#' @seealso findOverlapsOfPeaks, annotatePeakInBatch, makeVennDiagram
+#' @seealso \code{\link{findOverlapsOfPeaks}} (recommended replacement),
+#'          \code{\link{annotatePeakInBatch}}, \code{\link{makeVennDiagram}}
 #' @references 1.Interval tree algorithm from: Cormen, Thomas H.; Leiserson,
 #' Charles E.; Rivest, Ronald L.; Stein, Clifford. Introduction to Algorithms,
 #' second edition, MIT Press and McGraw-Hill. ISBN 0-262-53196-8
@@ -88,112 +186,128 @@
 #'     as.data.frame(t1$MergedPeaks)
 #'     }
 #' 
-findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L,minoverlap=0L,
+findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L, minoverlap = 0L,
                                  multiple = c(TRUE, FALSE),
                                  NameOfPeaks1 = "TF1", NameOfPeaks2 = "TF2", 
-                                 select=c("all", "first", "last", "arbitrary"), 
-                                 annotate =0, ignore.strand=TRUE, 
-                                 connectedPeaks=c("min", "merge"), ...){
+                                 select = c("all", "first", "last", "arbitrary"), 
+                                 annotate = 0, ignore.strand = TRUE, 
+                                 connectedPeaks = c("min", "merge"), ...) {
         .Deprecated("findOverlapsOfPeaks")
-        ###check inputs
+        ### Check inputs
         NAME_conn_string <- "___conn___"
         NAME_short_string <- "__"
         NAME_long_string <- "///"
         PeaksList <- list(...)
-        PeaksList<-lapply(PeaksList, function(Peaks){
+        PeaksList <- lapply(PeaksList, function(Peaks) {
             if (!inherits(Peaks, "GRanges")) {
                 stop("No valid Peaks passed in. It needs to be GRanges object")
             }
-            if(any(is.na(names(Peaks))) || any(duplicated(names(Peaks)))) {
+            if (any(is.na(names(Peaks))) || any(duplicated(names(Peaks)))) {
                 message("duplicated or NA names found. 
                         Rename all the names by numbers.")
-                names(Peaks) <- formatC(1:nrow(data), 
-                                        width=nchar(nrow(data)), 
-                                        flag='0')
+                n_peaks <- length(Peaks)
+                names(Peaks) <- formatC(seq_len(n_peaks), 
+                                        width = nchar(n_peaks), 
+                                        flag = '0')
             }
             Peaks
         })
         n <- length(PeaksList)
-        if(n>0){
-            if(n==1){
+        if (n > 0) {
+            if (n == 1) {
                 PeaksList <- PeaksList[[1]]
                 n <- length(PeaksList)
                 names <- names(PeaksList)
-                if(is.null(names)) names <- paste("peaks", seq.int(n), sep="")
-            }else{
-                ##save dots arguments names
+                if (is.null(names)) {
+                    names <- paste("peaks", seq.int(n), sep = "")
+                }
+            } else {
+                ## Save dots arguments names
                 dots <- substitute(list(...))[-1]
                 names <- unlist(sapply(dots, deparse))
             }
-        }else{
+        } else {
             names <- NULL
         }
-        if((!missing(Peaks1)) || (!missing(Peaks2))){
-            if(!missing(Peaks2)){##
+        if ((!missing(Peaks1)) || (!missing(Peaks2))) {
+            if (!missing(Peaks2)) {
                 if (!inherits(Peaks2, "GRanges")) {
                     stop("No valid Peaks passed in. 
                          It needs to be GRanges object")
                 }
-                if(n!=0) PeaksList <- c(list(Peaks2), PeaksList)
-                else PeaksList <- list(Peaks2)
-                n <- n+1
-                if(missing(NameOfPeaks2)) NameOfPeaks2 <- "Peaks2"
+                if (n != 0) {
+                    PeaksList <- c(list(Peaks2), PeaksList)
+                } else {
+                    PeaksList <- list(Peaks2)
+                }
+                n <- n + 1
+                if (missing(NameOfPeaks2)) {
+                    NameOfPeaks2 <- "Peaks2"
+                }
                 names <- c(NameOfPeaks2, names)
             }
-            if(!missing(Peaks1)){
+            if (!missing(Peaks1)) {
                 if (!inherits(Peaks1, "GRanges")) {
                     stop("No valid Peaks passed in. 
                          It needs to be GRanges object")
                 }
-                if(n!=0) PeaksList <- c(list(Peaks1), PeaksList)
-                else PeaksList <- list(Peaks1)
-                n <- n+1
-                if(missing(NameOfPeaks1)) NameOfPeaks1 <- "Peaks1"
+                if (n != 0) {
+                    PeaksList <- c(list(Peaks1), PeaksList)
+                } else {
+                    PeaksList <- list(Peaks1)
+                }
+                n <- n + 1
+                if (missing(NameOfPeaks1)) {
+                    NameOfPeaks1 <- "Peaks1"
+                }
                 names <- c(NameOfPeaks1, names)
             }
         }
-        if(n<2){
-            stop("Missing required argument Peaks!")
+        if (n < 2L) {
+            stop("At least 2 peak sets are required", call. = FALSE)
         }
-        if(n>5){
-            stop("The length of input peaks list should no more than 5")
+        if (n > 5L) {
+            stop("Maximum 5 peak sets are supported", call. = FALSE)
         }
         connectedPeaks <- match.arg(connectedPeaks)
-        if(any(duplicated(names)))
-            stop("Same input Peaks detected!")
-        ##handle colnames of metadata
+        if (any(duplicated(names))) {
+            stop("Duplicate peak set names detected", call. = FALSE)
+        }
+        ## Handle colnames of metadata
         metacolnames <- lapply(PeaksList, function(Peaks)
             colnames(mcols(Peaks)))
         metacolnames <- Reduce(intersect, metacolnames)
         metacolclass <- do.call(rbind, lapply(PeaksList, function(Peaks)
-            sapply(mcols(Peaks)[, metacolnames, drop=FALSE], 
+            sapply(mcols(Peaks)[, metacolnames, drop = FALSE], 
                    function(.ele) class(.ele)[1])))
         metacolclass <- apply(metacolclass, 2, 
-                              function(.ele) length(unique(.ele))==1)
+                              function(.ele) length(unique(.ele)) == 1)
         metacolnames <- metacolnames[metacolclass]
-        PeaksList <- lapply(PeaksList, function(Peaks){
+        PeaksList <- lapply(PeaksList, function(Peaks) {
             mcols(Peaks) <- mcols(Peaks)[, metacolnames]
             Peaks
         })
-        ##get all merged peaks
-        for(i in 1:n){
+        ## Get all merged peaks
+        for (i in seq_len(n)) {
             names(PeaksList[[i]]) <- 
                 paste(names[i], names(PeaksList[[i]]), 
-                      sep=NAME_conn_string)
+                      sep = NAME_conn_string)
         }
         Peaks <- unlist(GRangesList(PeaksList))
-        if(ignore.strand) strand(Peaks) <- "*"
+        if (ignore.strand) {
+            strand(Peaks) <- "*"
+        }
         
-        ol <- as.data.frame(findOverlaps(Peaks, maxgap=maxgap, 
-                                         minoverlap=minoverlap, 
-                                         select="all",
-                                         drop.self=TRUE, 
-                                         drop.redundant=TRUE))
-        olm <- cbind(names(Peaks[ol[,1]]), names(Peaks[ol[,2]]))
-        edgeL <- c(split(olm[,2], olm[,1]), split(olm[,1], olm[,2]))
+        ol <- as.data.frame(findOverlaps(Peaks, maxgap = maxgap, 
+                                         minoverlap = minoverlap, 
+                                         select = "all",
+                                         drop.self = TRUE, 
+                                         drop.redundant = TRUE))
+        olm <- cbind(names(Peaks[ol[, 1]]), names(Peaks[ol[, 2]]))
+        edgeL <- c(split(olm[, 2], olm[, 1]), split(olm[, 1], olm[, 2]))
         nodes <- unique(as.character(olm))
-        ##use graph to extract all the connected peaks
-        gR <- new("graphNEL", nodes=nodes, edgeL=edgeL)
+        ## Use graph to extract all the connected peaks
+        gR <- new("graphNEL", nodes = nodes, edgeL = edgeL)
         Merged <- connectedComp(ugraph(gR))        
         Left <- as.list(names(Peaks)[!names(Peaks) %in% nodes])
         all <- c(Merged, Left)
@@ -203,12 +317,12 @@ findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L,minoverlap=0L,
         noutcomes <- 2^ncontrasts
         outcomes <- matrix(0,noutcomes,ncontrasts)
         colnames(outcomes) <- names
-        for (j in 1:ncontrasts)
+        for (j in seq_len(ncontrasts))
             outcomes[,j] <- rep(0:1,times=2^(j-1), 
                                 each=2^(ncontrasts-j))
         xlist <- list()
         xlist1 <- list()
-        for (i in 1:ncontrasts){
+        for (i in seq_len(ncontrasts)){
             xlist[[i]] <- factor(as.numeric(unlist(lapply(all, function(.ele) 
                 any(grepl(paste("^",
                                 names[ncontrasts-i+1], 
@@ -239,25 +353,25 @@ findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L,minoverlap=0L,
                               class="VennCounts")
         xlist <- do.call(rbind, xlist)
         xlist <- xlist - 1
-        xlist <- xlist[nrow(xlist):1,,drop=FALSE] 
+        xlist <- xlist[rev(seq_len(nrow(xlist))),,drop=FALSE] 
         ## reverse xlist to match the order of names
         xlist <- apply(xlist, 2, base::paste, collapse="")
         all <- do.call(rbind, mapply(function(.ele, .id) cbind(.id, .ele), 
-                                     all, 1:length(all), SIMPLIFY=FALSE))
+                                     all, seq_along(all), SIMPLIFY=FALSE))
         all.peaks <- Peaks[all[,2]]
         all.peaks$gpForFindOverlapsOfPeaks <- all[, 1]
         all.peaks.rd <- reduce(all.peaks, min.gapwidth=maxgap+1L,
                                with.revmap=TRUE)
         mapping <- all.peaks.rd$revmap
         m <- sapply(mapping, length)
-        mIndex <- rep(1:length(mapping), m)
+        mIndex <- rep(seq_along(mapping), m)
         mLists <- unlist(mapping)
         mcols <- mcols(all.peaks[mLists])
         mcols$peakNames <- gsub(NAME_conn_string, 
                                 NAME_short_string, 
                                 names(all.peaks[mLists]))
         mcolsn <- sapply(mcols[1, ], function(.ele) class(.ele)[1])
-        mapping <- DataFrame(HHH_row___H=1:length(all.peaks.rd))
+        mapping <- DataFrame(HHH_row___H=seq_along(all.peaks.rd))
         for(.name in names(mcolsn)){
             .dat <- split(mcols[, .name], mIndex)
             mapping[, .name] <- switch(mcolsn[.name],
@@ -278,9 +392,10 @@ findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L,minoverlap=0L,
         all <- split(all.peaks.rd, all.peaks.rd$gpForFindOverlapsOfPeaks)
         all <- all[order(as.numeric(names(all)))] 
         ##important, and length(all)==length(xlist)
-        if(length(all)!=length(xlist)) 
-            stop("length of all should be equal to length of xlist. 
-                 Please report the bug. Thanks.")
+        if(length(all) != length(xlist)) {
+            stop("Length of 'all' should be equal to length of 'xlist'. ",
+                 "Please report the bug. Thanks.", call. = FALSE)
+        }
         listname <- apply(outcomes, 1, 
                           function(id) paste(names[as.logical(id)], 
                                              collapse=NAME_long_string))
@@ -288,7 +403,7 @@ findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L,minoverlap=0L,
         listname <- listname[-1]
         listcode <- listcode[-1]
         peaklist <- list()
-        for(i in 1:length(listcode)){
+        for(i in seq_along(listcode)){
             sublist <- all[xlist==listcode[i]]
             if(length(sublist)>0) 
                 peaklist[[listname[i]]]<-unlist(sublist, use.names=FALSE)
@@ -296,8 +411,7 @@ findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L,minoverlap=0L,
         correlation <- list()
         names(Peaks) <- gsub(NAME_conn_string, NAME_short_string, names(Peaks))
         npl <- names(peaklist)
-        for(i in seq_along(npl))
-        {
+        for(i in seq_along(npl)){
             npln <- unlist(strsplit(npl[i], NAME_long_string))
             if(length(npln)==2){
                 pl <- peaklist[[i]]$peakNames
@@ -330,7 +444,7 @@ findOverlappingPeaks <- function(Peaks1, Peaks2, maxgap = -1L,minoverlap=0L,
                     paste(names(pl1), names(pl2), sep="_")
             }
         }
-        for(i in 1:length(peaklist)){
+        for(i in seq_along(peaklist)){
             peaklist[[i]]$gpForFindOverlapsOfPeaks <- NULL
         }
         

@@ -3,7 +3,7 @@
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Transcription Start
 #' Site (TSS) coordinates for \emph{Rattus norvegicus} based on the Rnor_5.0
 #' (also known as rn5) genome assembly. This dataset was obtained from Ensembl
-#' via biomaRt and can be used directly with \code{\link{annotatePeakInBatch}}
+#' via \code{\link{biomaRt}} and can be used directly with \code{\link{annotatePeakInBatch}}
 #' for peak annotation.
 #' 
 #' @name TSS.rat.Rnor_5.0
@@ -24,11 +24,11 @@
 #' transcript for plus-strand genes and the 3' end for minus-strand genes.
 #' 
 #' \strong{Genome assembly:} Rnor_5.0 (also known as rn5)  
-#' \strong{Source:} Ensembl via biomaRt  
+#' \strong{Source:} Ensembl via \code{\link{biomaRt}}  
 #' \strong{Use case:} Direct annotation of ChIP-seq peaks to nearest TSS
 #' 
 #' \strong{Data generation:}
-#' The dataset was obtained using:
+#' The dataset was obtained from Ensembl using:
 #' \preformatted{
 #' mart <- useMart(
 #'     biomart = "ensembl",
@@ -36,10 +36,6 @@
 #' )
 #' TSS.rat.Rnor_5.0 <- getAnnotation(mart, featureType = "TSS")
 #' }
-#' 
-#' @note
-#' Rnor_5.0 (rn5) is a commonly used rat genome assembly. Ensure your peak
-#' coordinates are aligned to the same genome assembly (Rnor_5.0/rn5).
 #' 
 #' @seealso
 #' \code{\link{TSS.rat.RGSC3.4}}, \code{\link{annotatePeakInBatch}},

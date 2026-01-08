@@ -2,8 +2,9 @@
 #' 
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Transcription Start
 #' Site (TSS) coordinates for \emph{Mus musculus} based on the NCBIM37 (also
-#' known as mm9) genome assembly. This is a legacy genome assembly and is
-#' provided for compatibility with older datasets.
+#' known as mm9) genome assembly. This dataset was obtained from Ensembl via 
+#' \code{\link{biomaRt}} and can be used directly with \code{\link{annotatePeakInBatch}} for
+#' peak annotation. It is provided for compatibility with older datasets.
 #' 
 #' @name TSS.mouse.NCBIM37
 #' @docType data
@@ -23,11 +24,11 @@
 #' transcript for plus-strand genes and the 3' end for minus-strand genes.
 #' 
 #' \strong{Genome assembly:} NCBIM37 (also known as mm9) - **Legacy assembly**  
-#' \strong{Source:} Ensembl via biomaRt  
+#' \strong{Source:} Ensembl via \code{\link{biomaRt}}  
 #' \strong{Use case:} Annotation of legacy datasets aligned to mm9
 #' 
 #' \strong{Data generation:}
-#' The dataset was obtained using:
+#' The dataset was obtained from Ensembl using:
 #' \preformatted{
 #' mart <- useMart(
 #'     biomart = "ensembl",
@@ -36,11 +37,6 @@
 #' TSS.mouse.NCBIM37 <- getAnnotation(mart, featureType = "TSS")
 #' }
 #' 
-#' @note
-#' NCBIM37 (mm9) is a legacy genome assembly that has been superseded by
-#' GRCm38 (mm10). For new analyses, use \code{\link{TSS.mouse.GRCm38}}. This
-#' dataset is maintained for compatibility with older datasets that were aligned
-#' to mm9.
 #' 
 #' @seealso
 #' \code{\link{TSS.mouse.GRCm38}}, \code{\link{annotatePeakInBatch}},

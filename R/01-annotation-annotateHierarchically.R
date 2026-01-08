@@ -1,0 +1,439 @@
+#' Hierarchical annotation of peaks with factor-specific prioritization
+#' 
+#' @description 
+#' This function provides a comprehensive annotation system that applies multiple
+#' annotation strategies in parallel, then ranks and prioritizes results based
+#' on factor-specific binding patterns. Unlike single-method annotation, this
+#' approach captures annotations from multiple perspectives (promoters, gene
+#' bodies, intergenic regions, bidirectional promoters) and intelligently
+#' prioritizes them based on the biological factor type.
+#' 
+#' \strong{Key Features:}
+#' \itemize{
+#'   \item \strong{Parallel Annotation}: Applies multiple annotation strategies
+#'         simultaneously (promoter-focused, gene body-focused, intergenic,
+#'         bidirectional promoters)
+#'   \item \strong{Factor-Specific Prioritization}: Ranks results using
+#'         factor-specific prioritization strategies (TF, histone marks, Pol II,
+#'         etc.)
+#'   \item \strong{Factor-Specific}: Requires explicit factor type specification
+#'         for accurate prioritization
+#'   \item \strong{Special Case Handling}: Automatically handles bidirectional
+#'         promoters and broad peaks covering multiple features
+#' }
+#' 
+#' @param peaks A \link[GenomicRanges:GRanges-class]{GRanges} object containing
+#'        peaks to be annotated.
+#' @param annoData A \link[GenomicRanges:GRanges-class]{GRanges} or
+#'        \code{\link{annoGR}} object containing annotation data (genes,
+#'        transcripts, TSS positions).
+#' @param factor_type A character string specifying the biological factor type.
+#'        \strong{Required if using default prioritization} (when
+#'        \code{prioritization_function} is \code{NULL}). Options include: "TF", 
+#'        "H3K4me3", "H3K4me2", "H3K27ac", "H3K36me3", "H3K27me3", "PolII", "RBP",
+#'        (RNA-binding proteins),"ATAC" (accessibility), "3end" (3' end factors), 
+#'        "exon" (exon-specific), "intron" (intron-specific), "architectural" 
+#'        (architectural features), "ncRNA" (non-coding RNA), "repeat" (repetitive elements),
+#'        "intergenic" (intergenic regions), "chromatin_remodeler" (chromatin remodelers),
+#'        "multimodal" (multimodal factors), etc. Must be specified based on
+#'        biological knowledge of the factor being studied. Can be \code{NULL} if
+#'        providing a custom \code{prioritization_function}.
+#' @param is_promoter_binding Logical. If \code{TRUE} (default), treats the
+#'        factor as promoter-binding, which enables special handling of
+#'        bidirectional promoter annotations. When \code{TRUE}, peaks located in
+#'        bidirectional promoter regions will have both divergent gene annotations
+#'        preserved as special cases (excluded from priority score-based
+#'        ranking). This is particularly relevant for transcription factors (TF),
+#'        H3K4me3, H3K4me2, H3K27ac, and other factors that typically bind near
+#'        promoters. Set to \code{FALSE} for factors that do not typically bind
+#'        at promoters (e.g., H3K36me3, H3K27me3, intergenic factors) to disable
+#'        bidirectional promoter special case handling.
+#' @param annotation_strategies A list of custom annotation strategies to apply.
+#'        If \code{NULL}, default strategies will be used. See Details.
+#' @param prioritization_weights A list of custom prioritization weights. If
+#'        \code{NULL}, factor-specific default weights will be used.
+#' @param prioritization_function A custom prioritization function. If provided,
+#'        this function will be used instead of the default factor-specific
+#'        prioritization. The function should accept a \code{GRanges} object with
+#'        annotations as the first argument and return a \code{GRanges} object
+#'        with a \code{priority_score} column. Additional arguments can be passed
+#'        via \code{...}. If \code{NULL} (default), uses the built-in
+#'        factor-specific prioritization based on \code{factor_type}.
+#' @param return_all Logical. If \code{FALSE} (default), returns only the best
+#'        annotation per peak (plus special cases) based on priority score.
+#'        If \code{TRUE}, returns all annotations with priority scores based on 
+#'        priority score.
+#' @param ... Additional parameters passed to annotation methods or
+#'        prioritization functions.
+#' 
+#' @return Returns a \link[GenomicRanges:GRanges-class]{GRanges} object
+#'        containing annotated peaks. The object includes:
+#'        \itemize{
+#'          \item All standard annotation columns from \code{annotatePeakInBatch}
+#'                or \code{annoPeaks}
+#'          \item \code{priority_score}: Numeric priority score (higher = better)
+#'          \item \code{strategy_name}: Name of annotation strategy that produced
+#'                this annotation
+#'          \item \code{is_bidirectional_promoter}: Logical flag indicating if
+#'                annotation is from a bidirectional promoter (special case)
+#'          \item \code{is_completely_covered}: Logical flag indicating if feature
+#'                is completely covered by peak (special case)
+#'        }
+#' 
+#' @details
+#' 
+#' \strong{Algorithm:}
+#' 
+#' \enumerate{
+#'   \item \strong{Factor Type Validation}: Validates that \code{factor_type} is
+#'         specified (required for accurate prioritization).
+#'   \item \strong{Parallel Annotation}: Applies multiple annotation strategies
+#'         simultaneously:
+#'         \itemize{
+#'           \item Promoter-focused: \code{output = "overlapping"},
+#'                 \code{maxgap = 2000}
+#'           \item Gene body: \code{bindingType = "fullRange"}
+#'           \item Nearest (comprehensive): \code{output = "nearestLocation"},
+#'                 \code{maxgap = 10000}
+#'           \item Bidirectional promoters: Uses fixed bidirectional promoter
+#'                 detection
+#'           \item Intergenic/distal: \code{output = "nearestLocation"},
+#'                 \code{maxgap = 50000}
+#'         }
+#'   \item \strong{Special Case Handling}:
+#'         \itemize{
+#'           \item \strong{Bidirectional Promoters}: For promoter-binding factors
+#'                 (TF, H3K4me3, H3K27ac, H3K4me2), if a peak is in a bidirectional
+#'                 promoter region, both divergent gene annotations are kept without
+#'                 ranking.
+#'           \item \strong{Broad Peaks}: If a peak completely covers multiple
+#'                 features (\code{insideFeature == "includeFeature"}), all
+#'                 completely covered features are kept without ranking.
+#'         }
+#'   \item \strong{Factor-Specific Prioritization}: For annotations not in special
+#'         cases, applies factor-specific prioritization function to calculate
+#'         priority scores.
+#'   \item \strong{Result Selection}: If \code{return_all = FALSE}, returns best
+#'         annotation per peak (plus special cases). If \code{return_all = TRUE},
+#'         returns all annotations with priority scores.
+#' }
+#' 
+#' \strong{When to Use Hierarchical Annotation:}
+#' 
+#' - When you need comprehensive annotation from multiple perspectives
+#' - When factor-specific prioritization is important
+#' - When dealing with complex binding patterns (bidirectional promoters, broad
+#'   domains)
+#' 
+#' \strong{When to Use Single-Method Annotation:}
+#' 
+#' - When you have a specific annotation question (e.g., "find peaks near TSS")
+#' - When computational speed is critical
+#' - When you want full control over annotation parameters
+#' 
+#' @author Haibo Liu
+#' @seealso \code{\link{annotatePeakInBatch}} for single-method annotation,
+#'          \code{\link{annoPeaks}} for region-based annotation,
+#'          \code{\link{peaksNearBDP}} for bidirectional promoter detection
+#' @importFrom S4Vectors mcols
+#' @importFrom BiocGenerics start end
+#' @export
+#' @examples
+#' \dontrun{
+#' library(GenomeInfoDb)
+#' data(myPeakList)
+#' data(TSS.human.GRCh37)
+#' seqlevelsStyle(TSS.human.GRCh37) <- seqlevelsStyle(myPeakList)
+#' 
+#' # Specify factor type explicitly (required)
+#' anno_tf <- annotateHierarchically(
+#'     myPeakList[1:100],
+#'     AnnotationData = TSS.human.GRCh37,
+#'     factor_type = "TF"
+#'     is_promoter_binding = TRUE
+#' )
+#' 
+#' # Return all annotations with priority scores
+#' anno_all <- annotateHierarchically(
+#'     myPeakList[1:100],
+#'     AnnotationData = TSS.human.GRCh37,
+#'     factor_type = "H3K27me3",
+#'     is_promoter_binding = FALSE,
+#'     return_all = TRUE
+#' )
+#' 
+#' # Example 3: Using a custom prioritization function
+#' customPrioritize <- function(annotated_peaks, weight_distance = 1000) {
+#'     # Simple custom prioritization: prioritize by distance only
+#'     if ("distanceToSite" %in% colnames(mcols(annotated_peaks))) {
+#'         distance <- abs(mcols(annotated_peaks)$distanceToSite)
+#'         annotated_peaks$priority_score <- weight_distance * exp(-distance / 500)
+#'     } else {
+#'         annotated_peaks$priority_score <- 0
+#'     }
+#'     return(annotated_peaks)
+#' }
+#' 
+#' anno_custom <- annotateHierarchically(
+#'     myPeakList[1:100],
+#'     AnnotationData = TSS.human.GRCh37,
+#'     is_promoter_binding = FALSE,
+#'     factor_type = "H3K27me3",
+#'     prioritization_function = customPrioritize,
+#'     weight_distance = 2000  # Pass additional parameters via ...
+#' )
+#' }
+annotateHierarchically <- function(
+    peaks,
+    annoData,
+    factor_type,
+    is_promoter_binding = TRUE,
+    annotation_strategies = NULL,
+    prioritization_weights = NULL,
+    prioritization_function = NULL,
+    return_all = FALSE,
+    ...
+) {
+    # Input validation
+    if (missing(peaks)) {
+        stop("Missing required argument 'peaks'!", call. = FALSE)
+    }
+    if (missing(annoData)) {
+        stop("Missing required argument 'annoData'!", call. = FALSE)
+    }
+    if (!inherits(peaks, "GRanges")) {
+        stop("'peaks' must be a GRanges object", call. = FALSE)
+    }
+    if (!inherits(annoData, c("GRanges", "annoGR"))) {
+        stop("'annoData' must be a GRanges or annoGR object", call. = FALSE)
+    }
+    if (inherits(annoData, "annoGR")) {
+        annoData <- as(annoData, "GRanges")
+    }
+    
+    # Ensure peaks have names
+    if (is.null(names(peaks))) {
+        names(peaks) <- paste0("peak_", seq_along(peaks))
+    }
+    
+    # Step 1: Factor type validation (only required if using default prioritization)
+    if (is.null(prioritization_function)) {
+        if (missing(factor_type) || is.null(factor_type)) {
+            stop("'factor_type' must be specified when using default prioritization. ",
+                 "Please specify the biological factor type ",
+                 "(e.g., 'TF', 'H3K4me3', 'H3K36me3', 'H3K27me3', 'PolII', 'RBP', etc.). ",
+                 "Alternatively, provide a custom 'prioritization_function'. ",
+                 "See ?annotateHierarchically for available factor types.",
+                 call. = FALSE)
+        }
+    }
+    
+    # Define promoter-binding factors (for bidirectional promoter detection)
+    # Only relevant if factor_type is specified
+    # promoter_binding_factors <- c("TF", "H3K4me3", "H3K4me2", "H3K27ac", "H3K4me1")
+    # is_promoter_binding <- if (!is.null(factor_type)) {
+    #     factor_type %in% promoter_binding_factors
+    # } else {
+    #     FALSE  # Default to FALSE when using custom prioritization
+    # }
+    
+    # Step 2: Apply multiple annotation strategies in parallel
+    message("Applying multiple annotation strategies...")
+    # Get BPPARAM from ... if provided, otherwise use default
+    BPPARAM <- list(...)$BPPARAM
+    if (is.null(BPPARAM)) {
+        BPPARAM <- NULL  # Will use default in .applyMultipleStrategies
+    }
+    strategy_results <- .applyMultipleStrategies(peaks, annoData, annotation_strategies, BPPARAM = BPPARAM)
+    
+    # Step 3: Combine all annotations
+    # Extract non-empty annotations more efficiently
+    all_annotations <- lapply(strategy_results, function(x) x$annotations)
+    all_annotations <- all_annotations[lengths(all_annotations) > 0L]
+    
+    if (length(all_annotations) == 0L) {
+        warning("No annotations found from any strategy.", call. = FALSE)
+        return(GRanges())
+    }
+    
+    # Combine all annotations at once
+    combined_anno <- do.call(c, all_annotations)
+    
+    # Ensure peak names are present and preserve original peak names
+    # Annotation functions (annotatePeakInBatch, annoPeaks) preserve original
+    # peak names in the "peak" column, but we verify consistency
+    if (!"peak" %in% colnames(mcols(combined_anno))) {
+        # Peak column missing - this should not happen
+        stop("Peak names not found in annotation results. ",
+             "Annotation functions should preserve peak names in 'peak' column.",
+             call. = FALSE)
+    }
+    
+    # Verify that all peak names in annotations match original peak names
+    # This ensures we're using the original peak names from the input
+    unique_anno_peaks <- unique(combined_anno$peak)
+    if (!all(unique_anno_peaks %in% names(peaks))) {
+        # Some peak names don't match original - this indicates an issue
+        # but we'll keep the peak names as-is since annotation functions
+        # should have preserved them correctly
+        warning("Some peak names in annotations don't match original peak names. ",
+               "This may indicate an issue with annotation functions. ",
+               "Original peak names should be preserved.",
+               call. = FALSE)
+    }
+    
+    # Step 4: Identify and separate special cases (hierarchical annotation)
+    # Peaks with bidirectional promoters or completely covered features should
+    # NOT be considered for priority score-based annotation
+    
+    # Special Case 1: Bidirectional promoters for promoter-binding factors
+    bdp_annotations <- GRanges()
+    bdp_peaks <- character(0)
+    if (is_promoter_binding && "is_bidirectional_promoter" %in% colnames(mcols(combined_anno))) {
+        bdp_mask <- mcols(combined_anno)$is_bidirectional_promoter %in% TRUE
+        bdp_annotations <- combined_anno[bdp_mask]
+        if (length(bdp_annotations) > 0L) {
+            bdp_peaks <- unique(bdp_annotations$peak)
+            message("Found ", length(bdp_peaks), 
+                   " peaks in bidirectional promoters. ",
+                   "Excluding from priority score-based annotation.")
+        }
+    }
+    
+    # Special Case 2: Broad peaks completely covering multiple features
+    # Exclude peaks already annotated by bidirectional promoters (special case 1)
+    completely_covered_annotations <- GRanges()
+    covered_peaks <- character(0)
+    if ("insideFeature" %in% colnames(mcols(combined_anno))) {
+        # Only consider peaks not already in bidirectional promoters
+        if (length(bdp_peaks) > 0L) {
+            # Exclude bidirectional promoter peaks from completely covered analysis
+            covered_mask <- (mcols(combined_anno)$insideFeature == "includeFeature" &
+                            !combined_anno$peak %in% bdp_peaks)
+        } else {
+            covered_mask <- mcols(combined_anno)$insideFeature == "includeFeature"
+        }
+        
+        completely_covered_annotations <- combined_anno[covered_mask]
+        if (length(completely_covered_annotations) > 0L) {
+            covered_peaks <- unique(completely_covered_annotations$peak)
+            message("Found ", length(covered_peaks), 
+                   " peaks completely covering features",
+                   if (length(bdp_peaks) > 0L) {
+                       paste0(" (excluding ", length(bdp_peaks), 
+                             " already in bidirectional promoters)")
+                   } else {
+                       ""
+                   }, ". ",
+                   "Excluding from priority score-based annotation.")
+        }
+    }
+    
+    # Identified peaks that should be excluded from prioritization: bidirectional 
+    # promoters and completely covered peaks
+    excluded_peaks <- unique(c(bdp_peaks, covered_peaks))
+    
+    # Step 5: Apply factor-specific prioritization only to non-excluded peaks
+    if (length(excluded_peaks) > 0L) {
+        # Filter out excluded peaks for prioritization
+        prioritization_mask <- !combined_anno$peak %in% excluded_peaks
+        anno_for_prioritization <- combined_anno[prioritization_mask]
+    } else {
+        anno_for_prioritization <- combined_anno
+    }
+    
+    # Apply prioritization only to peaks not in special cases
+    if (length(anno_for_prioritization) > 0L) {
+        if (!is.null(prioritization_function)) {
+            # Use user-provided prioritization function
+            message("Applying custom prioritization function (", 
+                   length(unique(anno_for_prioritization$peak)), " peaks)")
+            anno_for_prioritization <- prioritization_function(
+                anno_for_prioritization, 
+                ...
+            )
+            # Validate that priority_score column exists
+            if (!"priority_score" %in% colnames(mcols(anno_for_prioritization))) {
+                stop("Custom prioritization function must return a GRanges object ",
+                     "with a 'priority_score' column in metadata.", call. = FALSE)
+            }
+        } else {
+            # Use default factor-specific prioritization
+            message("Applying factor-specific prioritization for: ", factor_type,
+                   " (", length(unique(anno_for_prioritization$peak)), " peaks)")
+            anno_for_prioritization <- .prioritizeAnnotations(
+                anno_for_prioritization, 
+                factor_type = factor_type,
+                sequencing_method = list(...)$sequencing_method,
+                ...
+            )
+        }
+    } else {
+        message("No peaks remaining for prioritization (all in special cases).")
+    }
+    
+    # Step 6: Result selection and combination
+    if (return_all) {
+        # Return all annotations: special cases + prioritized annotations
+        result_parts <- list()
+        
+        if (length(bdp_annotations) > 0L) {
+            result_parts[["bidirectional"]] <- bdp_annotations
+        }
+        if (length(completely_covered_annotations) > 0L) {
+            result_parts[["completely_covered"]] <- completely_covered_annotations
+        }
+        if (length(anno_for_prioritization) > 0L) {
+            result_parts[["prioritized"]] <- anno_for_prioritization
+        }
+        
+        if (length(result_parts) == 0L) {
+            return(GRanges())
+        }
+        
+        result <- do.call(c, result_parts)
+        message("Returning all annotations: ", 
+               length(unique(result$peak)), " peaks total.")
+        return(result)
+    } else {
+        # Return best annotation per peak for prioritized annotations,
+        # plus all special case annotations
+        result_parts <- list()
+        
+        # Add bidirectional promoter annotations (all of them)
+        if (length(bdp_annotations) > 0L) {
+            result_parts[["bidirectional"]] <- bdp_annotations
+        }
+        
+        # Add completely covered annotations (all of them)
+        if (length(completely_covered_annotations) > 0L) {
+            result_parts[["completely_covered"]] <- completely_covered_annotations
+        }
+        
+        # Get best annotation per peak for prioritized annotations
+        if (length(anno_for_prioritization) > 0L) {
+            # Sort by peak name, then by priority score (descending)
+            anno_sorted <- anno_for_prioritization[order(
+                anno_for_prioritization$peak, 
+                -anno_for_prioritization$priority_score, 
+                na.last = TRUE
+            )]
+            
+            # Get first (best) annotation for each peak
+            best_annotations <- anno_sorted[!duplicated(anno_sorted$peak)]
+            result_parts[["prioritized"]] <- best_annotations
+        }
+        
+        if (length(result_parts) == 0L) {
+            return(GRanges())
+        }
+        
+        # Combine all three types of annotations
+        result <- do.call(c, result_parts)
+        message("Returned ", length(unique(result$peak)), " peaks with annotations: ",
+               length(bdp_peaks), " bidirectional, ",
+               length(covered_peaks), " completely covered, ",
+               length(unique(anno_for_prioritization$peak)), " prioritized.")
+        return(result)
+    }
+}

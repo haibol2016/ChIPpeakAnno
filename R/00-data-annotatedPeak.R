@@ -7,7 +7,7 @@
 #' @details
 #' This dataset contains putative STAT1-binding regions identified in
 #' un-stimulated cells using ChIP-seq technology (Robertson et al., 2007).
-#' The peaks were annotated to transcription start sites (TSS) using the
+#' The peaks were annotated with transcription start sites (TSS) using the
 #' \code{annotatePeakInBatch} function.
 #' 
 #' **How this dataset was created:**
@@ -18,8 +18,7 @@
 #'     myPeakList, 
 #'     AnnotationData = TSS.human.GRCh37,
 #'     output = "both",
-#'     multiple = FALSE
-#' )
+#'     multiple = FALSE)
 #' }
 #' 
 #' @name annotatedPeak

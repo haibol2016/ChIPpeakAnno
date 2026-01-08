@@ -1,37 +1,169 @@
-#' Heatmap representing signals in given ranges
+#' Plot heatmap of signals across features
 #' 
-#' plot heatmap in the given feature ranges
+#' @description 
+#' Creates a heatmap visualization of signal intensity across genomic features.
+#' Each row represents a feature, and columns represent bins/tiles along the
+#' feature. This function is useful for visualizing ChIP-seq or RNA-seq signal
+#' patterns across many features simultaneously, allowing identification of
+#' common patterns and outliers.
 #' 
+#' The function supports multiple samples (displayed as adjacent heatmap columns),
+#' annotation tracks (displayed on the right side), and flexible sorting options.
+#' Features can be sorted by metadata columns or by signal intensity. The heatmap
+#' uses a color scale to represent signal intensity, with customizable color
+#' schemes and value ranges.
 #' 
-#' @param cvglists Output of \link{featureAlignedSignal} or a list of
-#' \link[IRanges:AtomicList-class]{SimpleRleList} or
-#' \link[IRanges:AtomicList-class]{RleList}
-#' @param feature.gr An object of \link[GenomicRanges:GRanges-class]{GRanges}
-#' with identical width.  If the width equal to 1, you can use upstream and
-#' downstream to set the range for plot.  If the width not equal to 1, you can
-#' use zeroAt to set the zero point of the heatmap.
-#' @param upstream,downstream upstream or dwonstream from the feature.gr.  It
-#' must keep same as \link{featureAlignedSignal}. It is used for x-axis label.
-#' @param zeroAt zero point position of feature.gr
-#' @param n.tile The number of tiles to generate for each element of
-#' feature.gr, default is 100
-#' @param annoMcols The columns of metadata of feature.gr that specifies the
-#' annotations shown of the right side of the heatmap.
-#' @param sortBy Sort the feature.gr by columns by annoMcols and then the
-#' signals of the given samples. Default is the first sample. Set to NULL to
-#' disable sort.
-#' @param color vector of colors used in heatmap
-#' @param lower.extreme,upper.extreme The lower and upper boundary value of
-#' each samples
-#' @param margin Margin for of the plot region.
-#' @param gap Gap between each heatmap columns.
-#' @param newpage Call grid.newpage or not. Default, TRUE
-#' @param gp A gpar object can be used for text.
-#' @param ... Not used.
-#' @return invisible gList object.
+#' @param cvglists Signal data in one of the following formats:
+#'        \itemize{
+#'          \item Output of \code{\link{featureAlignedSignal}}: A list of matrices
+#'                where each matrix has \code{n.tile} columns (one per tile/bin)
+#'                and rows corresponding to features
+#'          \item A list of \code{\link[IRanges:AtomicList-class]{SimpleRleList}}
+#'                or \code{\link[IRanges:AtomicList-class]{RleList}} objects
+#'                containing coverage/signal data
+#'          \item A single \code{SimpleRleList} or \code{RleList} object (will be
+#'                automatically converted to a list)
+#'        }
+#'        Each element in the list represents a different sample or condition.
+#'        List names will be used as labels below each heatmap column.
+#' @param feature.gr An object of \code{\link[GenomicRanges:GRanges-class]{GRanges}}
+#'        with identical width for all ranges. The features around which signal
+#'        will be plotted (e.g., TSS, gene centers, peak centers). Each range
+#'        becomes one row in the heatmap.
+#' @param upstream An integer specifying the number of base pairs upstream from
+#'        the feature to include in the plot. If provided, \code{downstream} must
+#'        also be provided. When both are provided, \code{feature.gr} will be
+#'        adjusted: ranges are centered at their midpoint, width is set to 1, and
+#'        then extended using \code{promoters()} by \code{upstream} and
+#'        \code{downstream + 1}. In this case, \code{zeroAt} is automatically
+#'        calculated and any provided \code{zeroAt} value is ignored.
+#' @param downstream An integer specifying the number of base pairs downstream
+#'        from the feature to include in the plot. Must be provided together with
+#'        \code{upstream}. See \code{upstream} for details.
+#' @param zeroAt A numeric value specifying the zero point position within
+#'        \code{feature.gr}. This determines where the x-axis zero is positioned.
+#'        \itemize{
+#'          \item If \code{0 <= zeroAt <= 1}: Treated as a fraction of the feature
+#'                width (e.g., 0.5 means the center of the feature)
+#'          \item If \code{zeroAt > 1}: Treated as an absolute position in base pairs
+#'                from the start of the feature
+#'        }
+#'        Default is 0.5 (center of feature) when \code{upstream} and
+#'        \code{downstream} are not provided. Ignored when \code{upstream} and
+#'        \code{downstream} are provided.
+#' @param n.tile An integer specifying the number of tiles/bins to divide each
+#'        feature into. Default is 100. If \code{cvglists} contains pre-computed
+#'        matrices from \code{featureAlignedSignal}, this must match the \code{n.tile}
+#'        value used when creating those matrices.
+#' @param annoMcols A character vector specifying column names from
+#'        \code{mcols(feature.gr)} to display as annotation tracks on the right
+#'        side of the heatmap. Each specified column will be displayed as a
+#'        vertical bar. For numeric columns, a color gradient is used. For
+#'        character/factor columns, distinct colors are assigned to each unique
+#'        value. If a column contains valid color names or numeric values 1-8
+#'        (R color palette indices), those are used directly.
+#' @param sortBy A character vector specifying how to sort features. Features are
+#'        sorted by the specified columns in order. Can include:
+#'        \itemize{
+#'          \item Column names from \code{mcols(feature.gr)}: Sort by metadata
+#'          \item Names from \code{cvglists}: Sort by total signal intensity
+#'                (sum across all tiles) for that sample
+#'        }
+#'        If \code{annoMcols} is provided, sorting first uses \code{annoMcols}
+#'        columns, then the \code{sortBy} columns. Default is the first sample
+#'        name. Set to \code{NULL} or empty vector to disable sorting (features
+#'        will be displayed in their original order).
+#' @param color A character vector of colors used for the heatmap color scale.
+#'        Colors should be ordered from low to high intensity. Default is
+#'        \code{colorRampPalette(c("yellow", "red"))(50)}, creating a yellow-to-red
+#'        gradient with 50 levels.
+#' @param lower.extreme A numeric vector specifying the lower boundary value for
+#'        each sample. If a single value is provided, it is used for all samples.
+#'        If missing, the minimum value in each sample's data is used. Values
+#'        below this threshold are mapped to the first color in \code{color}.
+#' @param upper.extreme A numeric vector specifying the upper boundary value for
+#'        each sample. If a single value is provided, it is used for all samples.
+#'        If missing, the maximum value in each sample's data is used. Values
+#'        above this threshold are mapped to the last color in \code{color}.
+#' @param margin A numeric vector of length 4 specifying the plot margins:
+#'        \code{c(bottom, left, top, right)}. Default is \code{c(0.1, 0.01, 0.15, 0.1)}.
+#'        Values are in normalized device coordinates (0-1).
+#' @param gap A numeric value specifying the gap between heatmap columns (for
+#'        multiple samples) and between annotation tracks. Default is 0.01 in
+#'        normalized device coordinates.
+#' @param newpage A logical value. If \code{TRUE} (default), calls
+#'        \code{grid.newpage()} before drawing, creating a new plot. If
+#'        \code{FALSE}, draws on the current graphics device.
+#' @param gp A \code{\link[grid]{gpar}} object specifying graphical parameters
+#'        for text labels (font size, family, etc.). Default is
+#'        \code{gpar(fontsize=10)}.
+#' @param ... Additional parameters (currently not used)
+#' 
+#' @return Returns invisibly a \code{\link[grid]{gList}} object containing all
+#'        the graphical elements of the heatmap. This can be saved and redrawn
+#'        later using \code{grid.draw()}, or modified using grid editing
+#'        functions.
+#' 
+#' @details
+#' 
+#' \strong{How the function works:}
+#' \enumerate{
+#'   \item Validates inputs and processes \code{feature.gr} (adjusts for
+#'         \code{upstream}/\code{downstream} if provided)
+#'   \item If \code{cvglists} contains RleList objects, calls
+#'         \code{featureAlignedSignal} to compute signal matrices
+#'   \item Sorts features if \code{sortBy} is specified
+#'   \item Converts signal values to colors based on \code{color},
+#'         \code{lower.extreme}, and \code{upper.extreme}
+#'   \item Creates annotation tracks if \code{annoMcols} is specified
+#'   \item Draws heatmap columns for each sample
+#'   \item Adds x-axis labels showing genomic coordinates
+#'   \item Adds color scale legend(s)
+#'   \item Draws all elements using grid graphics
+#' }
+#' 
+#' \strong{Sorting behavior:}
+#' When \code{sortBy} is specified, features are sorted in descending order
+#' (highest values first) by:
+#' \enumerate{
+#'   \item First, by \code{annoMcols} columns (if provided), in the order
+#'         specified
+#'   \item Then, by \code{sortBy} columns, in the order specified
+#' }
+#' For character/factor columns, levels are reversed so that the last unique
+#' value appears first. For numeric columns, higher values appear first.
+#' 
+#' \strong{Color mapping:}
+#' Signal values are mapped to colors using \code{cut()} with breaks determined
+#' by \code{lower.extreme}, \code{upper.extreme}, and the length of \code{color}.
+#' Values are clamped to the specified range before mapping. If all samples use
+#' the same range (single \code{lower.extreme} and \code{upper.extreme}), a
+#' single legend is displayed. Otherwise, each sample gets its own legend.
+#' 
+#' \strong{Annotation tracks:}
+#' Annotation tracks are displayed as vertical bars on the right side of the
+#' heatmap. Each track corresponds to one metadata column. The function
+#' automatically:
+#' \itemize{
+#'   \item Detects if values are valid colors (color names or R palette indices)
+#'   \item For numeric columns: Creates a color gradient using predefined color
+#'         groups
+#'   \item For character/factor columns: Assigns distinct colors to each unique
+#'         value
+#'   \item Adds a legend for each annotation track
+#' }
+#' 
+#' \strong{X-axis labeling:}
+#' The x-axis is labeled based on genomic coordinates relative to the zero point.
+#' Labels are automatically generated using \code{grid.pretty} to create nice
+#' round numbers. For multiple samples, labels are only shown on the first and
+#' last columns to avoid clutter.
+#' 
 #' @author Jianhong Ou
-#' @seealso See Also as \link{featureAlignedSignal},
-#' \link{featureAlignedDistribution}
+#' @seealso \code{\link{featureAlignedSignal}} for computing signal matrices,
+#'          \code{\link{featureAlignedDistribution}} for average signal plots,
+#'          \code{\link{featureAlignedExtendSignal}} for extending signal beyond
+#'          feature boundaries
 #' @keywords misc
 #' @export
 #' @import IRanges
@@ -39,206 +171,237 @@
 #' @importFrom BiocGenerics start end width strand
 #' @importFrom S4Vectors mcols
 #' @importFrom grid grid.newpage viewport legendGrob gpar gList gEdit rasterGrob
-#' gTree rasterGrob grid.pretty yaxisGrob grid.draw xaxisGrob
+#' gTree rasterGrob grid.pretty yaxisGrob grid.draw xaxisGrob textGrob
 #' @importFrom grDevices colorRampPalette col2rgb rgb
 #' @examples
+#' \dontrun{
+#' ## Example 1: Basic heatmap with annotation
+#' cvglists <- list(A = RleList(chr1 = Rle(sample.int(5000, 100), 
+#'                                         sample.int(300, 100))), 
+#'                  B = RleList(chr1 = Rle(sample.int(5000, 100), 
+#'                                         sample.int(300, 100))))
+#' feature.gr <- GRanges("chr1", IRanges(seq(1, 4900, 100), width = 100))
+#' feature.gr$anno <- rep(c("type1", "type2"), c(25, 24))
+#' featureAlignedHeatmap(cvglists, feature.gr, zeroAt = 50, 
+#'                       annoMcols = "anno")
 #' 
-#'   cvglists <- list(A=RleList(chr1=Rle(sample.int(5000, 100), 
-#'                                       sample.int(300, 100))), 
-#'                    B=RleList(chr1=Rle(sample.int(5000, 100), 
-#'                                       sample.int(300, 100))))
-#'   feature.gr <- GRanges("chr1", IRanges(seq(1, 4900, 100), width=100))
-#'   feature.gr$anno <- rep(c("type1", "type2"), c(25, 24))
-#'   featureAlignedHeatmap(cvglists, feature.gr, zeroAt=50, annoMcols="anno")
+#' ## Example 2: Sort by signal intensity
+#' featureAlignedHeatmap(cvglists, feature.gr, zeroAt = 50,
+#'                       sortBy = "A")
+#' 
+#' ## Example 3: Custom colors and value range
+#' featureAlignedHeatmap(cvglists, feature.gr, zeroAt = 50,
+#'                       color = colorRampPalette(c("blue", "white", "red"))(100),
+#'                       lower.extreme = 0, upper.extreme = 5000)
+#' 
+#' ## Example 4: Using upstream and downstream
+#' feature.gr <- GRanges("chr1", IRanges(seq(1, 4900, 100), width = 100))
+#' featureAlignedHeatmap(cvglists, feature.gr, 
+#'                       upstream = 2000, downstream = 2000,
+#'                       annoMcols = "anno")
+#' 
+#' ## Example 5: Multiple annotation tracks
+#' feature.gr$score <- runif(length(feature.gr), 0, 100)
+#' featureAlignedHeatmap(cvglists, feature.gr, zeroAt = 50,
+#'                       annoMcols = c("anno", "score"),
+#'                       sortBy = c("anno", "A"))
+#' }
 #' 
 featureAlignedHeatmap <- 
     function(cvglists, feature.gr, upstream, downstream, 
-             zeroAt, n.tile=100,
-             annoMcols=c(), sortBy=names(cvglists)[1],
-             color=colorRampPalette(c("yellow", "red"))(50),
+             zeroAt, n.tile = 100,
+             annoMcols = c(), sortBy = names(cvglists)[1],
+             color = colorRampPalette(c("yellow", "red"))(50),
              lower.extreme, upper.extreme,
-             margin=c(0.1, 0.01, 0.15, 0.1), gap=0.01, 
-             newpage=TRUE, gp=gpar(fontsize=10),
-             ...){
-    if(!missing(lower.extreme)){
+             margin = c(0.1, 0.01, 0.15, 0.1), gap = 0.01, 
+             newpage = TRUE, gp = gpar(fontsize = 10),
+             ...) {
+    if (!missing(lower.extreme)) {
         stopifnot(is.numeric(lower.extreme))
     }
-    if(!missing(upper.extreme)){
+    if (!missing(upper.extreme)) {
         stopifnot(is.numeric(upper.extreme))
     }
-    stopifnot(is(gp, "gpar"))
+    stopifnot(inherits(gp, "gpar"))
     stopifnot(is.logical(newpage))
-    stopifnot(is(feature.gr, "GRanges"))
+    stopifnot(inherits(feature.gr, "GRanges"))
     
     grWidr <- unique(width(feature.gr))
-    if(missing(upstream) || missing(downstream)){
-        if(length(grWidr)!=1){
+    if (missing(upstream) || missing(downstream)) {
+        if (length(grWidr) != 1) {
             stop("The width of feature.gr is not identical.")
         }
-        if(missing(zeroAt)) {
+        if (missing(zeroAt)) {
             zeroAt <- 0.5
             message("zero is set as the center of the feature.gr")
         }
-    }else{
-        if(!is.numeric(upstream) || !is.numeric(downstream)){
-            stop("upstream and downstream must be integers")
+    } else {
+        if (!is.numeric(upstream) || !is.numeric(downstream)) {
+            stop("'upstream' and 'downstream' must be numeric", call. = FALSE)
         }
-        if(upstream<0 || downstream<0){
-            stop("upstream and downstream must be not less than 0")
+        if (upstream < 0L || downstream < 0L) {
+            stop("'upstream' and 'downstream' must be non-negative", 
+                 call. = FALSE)
         }
         upstream <- as.integer(upstream)
         downstream <- as.integer(downstream)
-        if(length(grWidr)!=1){
-            start(feature.gr) <- start(feature.gr)+floor(grWidr/2)
+        if (length(grWidr) != 1) {
+            start(feature.gr) <- start(feature.gr) + floor(grWidr / 2)
             width(feature.gr) <- 1
-            warning("feature.gr is set to the center of feature.gr")
+            warning("feature.gr is set to the center of feature.gr",
+                    call. = FALSE)
         }
-        zeroAt <- upstream/(upstream + downstream)
+        zeroAt <- upstream / (upstream + downstream)
         feature.gr <- promoters(feature.gr, upstream = upstream,
                                 downstream = downstream + 1)
         grWidr <- unique(width(feature.gr))
     }
     stopifnot(is.numeric(zeroAt))
-    stopifnot(zeroAt>=0)
-    if(zeroAt<=1){
-        zero <- round(grWidr*zeroAt)
-    }else{
+    stopifnot(zeroAt >= 0)
+    if (zeroAt <= 1) {
+        zero <- round(grWidr * zeroAt)
+    } else {
         zero <- round(zeroAt)
     }
     
     grWid <- c(0, grWidr) - zero
     grWidLab <- grid.pretty(grWid)
-    grWidAt <- (grWidLab+zero)/grWidr
-    if(inherits(cvglists, c("SimpleRleList", "RleList", "CompressedRleList"))){
+    grWidAt <- (grWidLab + zero) / grWidr
+    if (inherits(cvglists, c("SimpleRleList", "RleList", "CompressedRleList"))) {
         cvglistsName <- substitute(deparse(cvglists))
         cvglists <- list(cvglists)
         names(cvglists) <- cvglistsName
     }
-    if(!is(cvglists, "list")){
-        stop("cvglists must be output of featureAlignedSignal or 
-             a list of SimpleRleList or RleList")
+    if (!is.list(cvglists)) {
+        stop("'cvglists' must be output of featureAlignedSignal or ",
+             "a list of SimpleRleList or RleList", call. = FALSE)
     }
     
     
-    cls <- sapply(cvglists, is, class2="matrix")
-    if(all(cls)){
+    cls <- vapply(cvglists, is.matrix, FUN.VALUE = logical(1))
+    if (all(cls)) {
         cov <- cvglists
-        if(ncol(cov[[1]])!=n.tile){
-            stop("n.tile must keep same as featureAligendSignal.")
+        if (ncol(cov[[1L]]) != n.tile) {
+            stop("'n.tile' must match the value used in featureAlignedSignal",
+                 call. = FALSE)
         }
-    }else{
-      cls <- sapply(cvglists, inherits, 
-                    what = c("SimpleRleList", "RleList", "CompressedRleList"))
-      if(any(!cls))
-        stop("cvglists must be a list of SimpleRleList or RleList")
-      cov <- featureAlignedSignal(cvglists, feature.gr, n.tile=n.tile)
+    } else {
+        cls <- vapply(cvglists, inherits, 
+                      what = c("SimpleRleList", "RleList", "CompressedRleList"),
+                      FUN.VALUE = logical(1))
+        if (any(!cls)) {
+            stop("'cvglists' must be a list of SimpleRleList or RleList",
+                 call. = FALSE)
+        }
+        cov <- featureAlignedSignal(cvglists, feature.gr, n.tile = n.tile)
     }
     
     annoMcols <- annoMcols[annoMcols %in% colnames(mcols(feature.gr))]
-    if(length(sortBy)>0){
+    if (length(sortBy) > 0) {
         covTotalCoverage <- 
-            do.call(cbind, lapply(cov, rowSums, na.rm=TRUE))
+            do.call(cbind, lapply(cov, rowSums, na.rm = TRUE))
         colnames(covTotalCoverage) <- names(cvglists)
-        if(length(annoMcols)>0){
-            sortMatrix <- mcols(feature.gr)[, annoMcols, drop=FALSE]
-            for(i in seq.int(ncol(sortMatrix))){
-                if(!is.numeric(sortMatrix[,i])){
-                    sortMatrix[,i] <- 
-                        factor(as.character(sortMatrix[,i]), 
-                               levels=
+        if (length(annoMcols) > 0) {
+            sortMatrix <- mcols(feature.gr)[, annoMcols, drop = FALSE]
+            for (i in seq.int(ncol(sortMatrix))) {
+                if (!is.numeric(sortMatrix[, i])) {
+                    sortMatrix[, i] <- 
+                        factor(as.character(sortMatrix[, i]), 
+                               levels =
                                  rev(unique(as.character(sortMatrix[, i]))))
                 }
             }
-            if(all(sortBy %in% colnames(mcols(feature.gr)))){
+            if (all(sortBy %in% colnames(mcols(feature.gr)))) {
                 sortMatrix <- 
                     cbind(sortMatrix, 
                           as.data.frame(mcols(feature.gr)[, sortBy, 
-                                                          drop=FALSE]))
-            }else{
-                if(all(sortBy %in% colnames(covTotalCoverage))){
+                                                          drop = FALSE]))
+            } else {
+                if (all(sortBy %in% colnames(covTotalCoverage))) {
                     sortMatrix <- 
                         cbind(sortMatrix,
                               data.frame(covTotalCoverage[, sortBy,
-                                                          drop=FALSE]))
-                }else{
-                    stop("sortBy is incorrect.")
+                                                          drop = FALSE]))
+                } else {
+                    stop("'sortBy' is incorrect", call. = FALSE)
                 }
             }
-        }else{
-            if(all(sortBy %in% colnames(mcols(feature.gr)))){
+        } else {
+            if (all(sortBy %in% colnames(mcols(feature.gr)))) {
                 sortMatrix <- 
-                    as.data.frame(mcols(feature.gr)[, sortBy, drop=FALSE])
-            }else{
-                if(all(sortBy %in% colnames(covTotalCoverage))){
+                    as.data.frame(mcols(feature.gr)[, sortBy, drop = FALSE])
+            } else {
+                if (all(sortBy %in% colnames(covTotalCoverage))) {
                     sortMatrix <- data.frame(covTotalCoverage[, sortBy,
-                                                              drop=FALSE])
-                }else{
-                    stop("sortBy is incorrect.")
+                                                              drop = FALSE])
+                } else {
+                    stop("'sortBy' is incorrect", call. = FALSE)
                 }
             }
         }
-        names(sortMatrix) <- paste("V", 1:ncol(sortMatrix))
+        names(sortMatrix) <- paste("V", seq_len(ncol(sortMatrix)))
         soid <- do.call(order, c(as.list(sortMatrix), decreasing = TRUE))
         cov <- lapply(cov, function(.ele) .ele[soid, ])
         feature.gr <- feature.gr[soid]
     }
     
     #covert to color
-    if(missing(lower.extreme)){
+    if (missing(lower.extreme)) {
         lower.extreme <- rep(0, length(cvglists))
     }
-    if(missing(upper.extreme)){
-        lim=list()
-    }else{
+    if (missing(upper.extreme)) {
+        lim <- list()
+    } else {
         upper.extreme <- 
-            rep(upper.extreme, length(cvglists))[1:length(cvglists)]
-        lim=as.list(data.frame(rbind(lower.extreme, upper.extreme)))
+            rep(upper.extreme, length(cvglists))[seq_along(cvglists)]
+        lim <- as.list(data.frame(rbind(lower.extreme, upper.extreme)))
         names(lim) <- NULL
     }
     
-    if(length(lim)==0){
-        lim <- sapply(cov, range, na.rm=TRUE, simplify=FALSE)
+    if (length(lim) == 0) {
+        lim <- sapply(cov, range, na.rm = TRUE, simplify = FALSE)
     }
-    if(length(lim)==1){
+    if (length(lim) == 1) {
         lim <- rep(lim, length(cov))
         legend <- 1
-    }else{
+    } else {
         legend <- length(cov)
     }
-    if(any(sapply(lim, length)<2)){
-        stop("each limit should be a numeric vector with length 2")
+    if (any(sapply(lim, length) < 2L)) {
+        stop("each limit should be a numeric vector with length 2", 
+             call. = FALSE)
     }
-    cov <- mapply(function(.ele, .lim){
-        if(min(.lim)==max(.lim)){
-            .lim <- seq(min(.lim), max(.lim)+1, length.out=length(color)+1)
-        }else{
-            .lim <- seq(min(.lim), max(.lim), length.out=length(color)+1)
+    cov <- mapply(function(.ele, .lim) {
+        if (min(.lim) == max(.lim)) {
+            .lim <- seq(min(.lim), max(.lim) + 1, length.out = length(color) + 1)
+        } else {
+            .lim <- seq(min(.lim), max(.lim), length.out = length(color) + 1)
         }
         .lim[1] <- min(.lim[1], 0)
         .lim[length(.lim)] <- max(max(.lim), .Machine$integer.max)
         t(apply(.ele, 1, 
-                cut, breaks=.lim, labels=color, include.lowest=TRUE))
-    }, cov, lim, SIMPLIFY=FALSE)
+                cut, breaks = .lim, labels = color, include.lowest = TRUE))
+    }, cov, lim, SIMPLIFY = FALSE)
     # library(grid)
     # grid.raster
-    if(newpage) grid.newpage()
+    if (newpage) grid.newpage()
     allGrob <- NULL
-    height=1-margin[3]-margin[1]
-    width=1-margin[4]-margin[2]
+    height <- 1 - margin[3] - margin[1]
+    width <- 1 - margin[4] - margin[2]
     ## draw y labels
-    isFloat <- function(x){
-        if(is.numeric(x)){
-            return(x!=floor(x))
+    isFloat <- function(x) {
+        if (is.numeric(x)) {
+            return(x != floor(x))
         }
         return(FALSE)
     }
     areColors <- function(x) {
         sapply(x, function(X) {
-            if(isFloat(X)) return(FALSE)
-            if(is.numeric(X)){
-                if(X<9 && X>0){
+            if (isFloat(X)) return(FALSE)
+            if (is.numeric(X)) {
+                if (X < 9 && X > 0) {
                     return(TRUE)
-                }else{
+                } else {
                     return(FALSE)
                 }
             }
@@ -330,7 +493,7 @@ featureAlignedHeatmap <-
                     mc.label <- unique(mc)
                     mc <- factor(mc, levels=mc.label)
                     mc.label.color <- rep(colorGroup[[ci]], 
-                                          length(mc.label))[1:length(mc.label)]
+                                          length(mc.label))[seq_along(mc.label)]
                     levels(mc) <- mc.label.color
                     mc <- as.character(mc)
                 }
@@ -414,7 +577,7 @@ featureAlignedHeatmap <-
     wid <- 1/l
     x <- -wid/2
     y <- 1
-    for(i in 1:l){
+    for(i in seq_len(l)){
         x <- x+wid
         x.name <- names(cvglists)[i]
         vp.heatmap.sub <- viewport(x=x, width=wid-gap, height=y,
@@ -501,8 +664,7 @@ featureAlignedHeatmap <-
                                width=width, height=margin[3]-gap,
                                name="vp.xlabels")
         x <- -wid/2
-        h <- .5
-        for(i in 1:l){
+        for(i in seq_len(l)){
             x <- x+wid
             x.name <- names(cvglists)[i]
             text.xlabels.sub <- 
@@ -531,8 +693,7 @@ featureAlignedHeatmap <-
                                name="vp.xlabels")
         
         x <- -wid/2
-        h <- .5
-        for(i in 1:l){
+        for(i in seq_len(l)){
             x <- x+wid
             x.name=names(cvglists)[i]
             vp.legend.sub <- 

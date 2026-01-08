@@ -1,12 +1,180 @@
-expandGR <- function(gr, size){
-    if(size == 0){
+#' Expand or shrink genomic ranges symmetrically
+#' 
+#' @description 
+#' Expands or shrinks a \code{\link[GenomicRanges]{GRanges}} object by a
+#' specified number of base pairs on both sides (start and end). Positive
+#' values expand ranges outward, negative values shrink ranges inward. After
+#' modification, ranges are automatically trimmed to ensure they remain within
+#' valid genomic coordinates (chromosome boundaries).
+#' 
+#' This function is useful for:
+#' \itemize{
+#'   \item Adding flanking regions around peaks or features
+#'   \item Creating fixed-size windows around genomic coordinates
+#'   \item Shrinking ranges to focus on core regions
+#'   \item Preparing ranges for visualization or analysis
+#' }
+#' 
+#' @param gr A \code{\link[GenomicRanges]{GRanges}} object to expand or shrink.
+#'        All ranges in the object are modified by the same amount. Metadata
+#'        columns are preserved in the output.
+#' @param size An integer specifying the number of base pairs to add or
+#'        subtract. The behavior depends on the sign:
+#'        \itemize{
+#'          \item \code{size > 0}: Expands ranges by adding \code{size} bp to both
+#'                start (moving it left/upstream) and end (moving it
+#'                right/downstream)
+#'          \item \code{size < 0}: Shrinks ranges by subtracting \code{abs(size)}
+#'                bp from both start (moving it right) and end (moving it left)
+#'          \item \code{size == 0}: Returns the input unchanged (no modification)
+#'        }
+#'        For negative values, ranges with width <= \code{2 * abs(size)} are
+#'        removed before shrinking (to avoid negative or zero-width ranges).
+#' 
+#' @return Returns a \code{\link[GenomicRanges]{GRanges}} object with
+#'         expanded/shrunk ranges. The returned object:
+#'         \itemize{
+#'           \item Has the same structure as the input (same number of ranges,
+#'                 unless ranges were removed due to being too small)
+#'           \item Preserves all metadata columns from the input
+#'           \item Has ranges trimmed to valid genomic coordinates (within
+#'                 chromosome boundaries)
+#'           \item May have fewer ranges than input if \code{size < 0} and some
+#'                 ranges were too small
+#'         }
+#' 
+#' @details
+#' 
+#' \strong{How the function works:}
+#' \enumerate{
+#'   \item If \code{size == 0}, returns the input unchanged
+#'   \item Validates that \code{gr} is a GRanges object
+#'   \item If \code{size < 0}, filters out ranges with width <= \code{2 *
+#'         abs(size)} (to avoid creating invalid ranges)
+#'   \item Modifies coordinates:
+#'         \itemize{
+#'           \item \code{start(gr) <- start(gr) - size} (subtracts for expansion,
+#'                 adds for shrinking)
+#'           \item \code{end(gr) <- end(gr) + size} (adds for expansion,
+#'                 subtracts for shrinking)
+#'         }
+#'   \item Suppresses warnings during coordinate modification (ranges may
+#'         temporarily extend beyond boundaries)
+#'   \item Trims ranges using \code{\link[GenomicRanges]{trim}} to ensure they
+#'         remain within valid genomic coordinates
+#' }
+#' 
+#' \strong{Expansion (size > 0):}
+#' When expanding ranges:
+#' \itemize{
+#'   \item Start position moves left (decreases) by \code{size} bp
+#'   \item End position moves right (increases) by \code{size} bp
+#'   \item Total width increases by \code{2 * size} bp
+#'   \item Ranges are trimmed if they extend beyond chromosome boundaries
+#' }
+#' 
+#' Example: A range at positions 100-200 with \code{size = 50} becomes 50-250
+#' (before trimming).
+#' 
+#' \strong{Shrinking (size < 0):}
+#' When shrinking ranges:
+#' \itemize{
+#'   \item Start position moves right (increases) by \code{abs(size)} bp
+#'   \item End position moves left (decreases) by \code{abs(size)} bp
+#'   \item Total width decreases by \code{2 * abs(size)} bp
+#'   \item Ranges with width <= \code{2 * abs(size)} are removed (cannot shrink
+#'         without creating invalid ranges)
+#' }
+#' 
+#' Example: A range at positions 100-200 with \code{size = -20} becomes
+#' 120-180. A range at positions 100-110 with \code{size = -20} would be
+#' removed (width 10 < 2*20 = 40).
+#' 
+#' \strong{Coordinate trimming:}
+#' After modification, ranges are automatically trimmed using
+#' \code{\link[GenomicRanges]{trim}} to ensure:
+#' \itemize{
+#'   \item Start positions are >= 1
+#'   \item End positions are <= chromosome length
+#'   \item Ranges remain within valid genomic boundaries
+#' }
+#' This means that ranges near chromosome boundaries may be trimmed to smaller
+#' sizes than requested.
+#' 
+#' \strong{Warning suppression:}
+#' The function suppresses warnings during coordinate modification because
+#' ranges may temporarily extend beyond chromosome boundaries before trimming.
+#' This is expected behavior and the warnings are not informative.
+#' 
+#' @note
+#' \itemize{
+#'   \item The function modifies ranges symmetrically (same amount on both sides)
+#'   \item For negative \code{size}, small ranges are removed to avoid invalid
+#'         coordinates
+#'   \item Ranges are always trimmed to valid genomic coordinates after
+#'         modification
+#'   \item Metadata columns are preserved in the output
+#'   \item The function does not check for overlapping ranges or other
+#'         validity issues beyond coordinate boundaries
+#'   \item Strand information is preserved but not used in the expansion
+#'         (expansion is strand-agnostic)
+#' }
+#' 
+#' @seealso
+#' \itemize{
+#'   \item \code{\link[GenomicRanges]{trim}} for trimming ranges to chromosome
+#'         boundaries
+#'   \item \code{\link[GenomicRanges]{resize}} for resizing ranges to a fixed
+#'         width
+#'   \item \code{\link[GenomicRanges]{flank}} for extracting flanking regions
+#' }
+#' 
+#' @author Internal utility function
+#' @keywords internal
+#' 
+#' @examples
+#' 
+#' # Example 1: Basic expansion
+#' gr <- GRanges("chr1", IRanges(100, 200))
+#' expandGR(gr, size = 50)  # Expands to 50-250 (before trimming)
+#' 
+#' # Example 2: Basic shrinking
+#' gr <- GRanges("chr1", IRanges(100, 200))
+#' expandGR(gr, size = -20)  # Shrinks to 120-180
+#' 
+#' # Example 3: No change (size = 0)
+#' gr <- GRanges("chr1", IRanges(100, 200))
+#' expandGR(gr, size = 0)  # Returns unchanged
+#' 
+#' # Example 4: Multiple ranges with metadata
+#' gr <- GRanges("chr1", 
+#'               IRanges(start = c(100, 500, 1000), width = 100),
+#'               strand = c("+", "-", "*"),
+#'               score = c(10, 20, 30))
+#' expandGR(gr, size = 50)  # All ranges expanded, metadata preserved
+#' 
+#' # Example 5: Shrinking removes small ranges
+#' gr <- GRanges("chr1", 
+#'               IRanges(start = c(100, 200, 300), 
+#'                       width = c(100, 50, 10)))
+#' # Range with width 10 will be removed when shrinking by 20
+#' expandGR(gr, size = -20)  # Only first two ranges remain
+#' 
+#' # Example 6: Expansion near chromosome boundary (will be trimmed)
+#' # Assuming chr1 has length 1000, this range will be trimmed
+#' gr <- GRanges("chr1", IRanges(950, 1000))
+#' expandGR(gr, size = 100)  # Trimmed to stay within chr1 boundaries
+expandGR <- function(gr, size) {
+    if (size == 0L) {
         return(gr)
     }
-    if(!is(gr, "GRanges")){
-        stop("gr must be an object of GRanges")
+    
+    if (!inherits(gr, "GRanges")) {
+        stop("'gr' must be a GRanges object", call. = FALSE)
     }
-    if(size < 0){
-        gr <- gr[width(gr)>2*abs(size)]
+    
+    if (size < 0L) {
+        gr <- gr[width(gr) > 2L * abs(size)]
     }
     
     suppressWarnings({
@@ -14,6 +182,5 @@ expandGR <- function(gr, size){
         end(gr) <- end(gr) + size
     })
     
-    gr <- trim(gr)
-    gr
+    trim(gr)
 }

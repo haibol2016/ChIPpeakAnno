@@ -3,7 +3,7 @@
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Transcription Start
 #' Site (TSS) coordinates for \emph{Danio rerio} (zebrafish) based on the Zv9
 #' (also known as danRer10) genome assembly. This dataset was obtained from
-#' Ensembl archive via biomaRt and can be used directly with
+#' Ensembl archive via \code{\link{biomaRt}} and can be used directly with
 #' \code{\link{annotatePeakInBatch}} for peak annotation.
 #' 
 #' @name TSS.zebrafish.Zv9
@@ -25,7 +25,7 @@
 #' genes.
 #' 
 #' \strong{Genome assembly:} Zv9 (also known as danRer10)  
-#' \strong{Source:} Ensembl archive via biomaRt  
+#' \strong{Source:} Ensembl archive via \code{\link{biomaRt}}  
 #' \strong{Use case:} Direct annotation of ChIP-seq peaks to nearest TSS
 #' 
 #' \strong{Data generation:}

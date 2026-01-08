@@ -23,7 +23,7 @@
 #' transcript for plus-strand genes and the 3' end for minus-strand genes.
 #' 
 #' \strong{Genome assembly:} NCBI36 (also known as hg18) - **Legacy assembly**  
-#' \strong{Source:} Ensembl archive via biomaRt  
+#' \strong{Source:} Ensembl archive via \code{\link{biomaRt}}  
 #' \strong{Use case:} Annotation of legacy datasets aligned to hg18
 #' 
 #' \strong{Data generation:}

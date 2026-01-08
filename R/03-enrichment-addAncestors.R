@@ -1,44 +1,95 @@
+## funtion not needed
+
 #' Add GO IDs of the ancestors for a given vector of GO IDs
 #' 
 #' @description 
-#' Adds GO IDs of the ancestors for a given vector of GO IDs leveraging GO.db.
-#' This function expands a set of GO terms by including their ancestor terms
-#' from the Gene Ontology hierarchy.
+#' Adds GO IDs of the ancestors for a given vector of GO IDs leveraging the
+#' \code{GO.db} package. This function expands a set of GO terms by including
+#' their ancestor terms from the Gene Ontology hierarchy. For each input GO ID,
+#' all ancestor terms (parent terms up to the root) are retrieved and associated
+#' with the same Entrez IDs as the original GO ID.
 #' 
-#' @param go.ids A matrix with at least 4 columns where:
+#' The function uses the GO ancestor mappings from \code{GO.db}:
+#' \code{GOBPANCESTOR} for biological process, \code{GOCCANCESTOR} for cellular
+#' component, and \code{GOMFANCESTOR} for molecular function. The root term
+#' "all" is automatically excluded from the results.
+#' 
+#' @param go.ids A character matrix with at least 4 columns where:
 #'   \itemize{
-#'     \item Column 1: GO IDs (character)
-#'     \item Column 2: Evidence codes (not used in this function)
-#'     \item Column 3: Ontology type (not used in this function)
-#'     \item Column 4: Entrez IDs (character)
+#'     \item Column 1: GO IDs (character) - the GO term identifiers to expand
+#'     \item Column 2: Evidence codes (not used in this function, but required
+#'           for input format compatibility)
+#'     \item Column 3: Ontology type (not used in this function, but required
+#'           for input format compatibility)
+#'     \item Column 4: Entrez IDs (character) - gene identifiers associated
+#'           with each GO ID
 #'   }
-#' @param ontology Character string specifying the ontology type:
+#'   The matrix should contain unique GO ID and Entrez ID pairs. This format
+#'   is typically obtained from \code{\link{getEnrichedGO}} or similar
+#'   enrichment analysis functions.
+#' @param ontology A character string specifying the Gene Ontology type.
+#'   Must be one of:
 #'   \itemize{
-#'     \item \code{"bp"}: Biological process
-#'     \item \code{"cc"}: Cellular component
-#'     \item \code{"mf"}: Molecular function
+#'     \item \code{"bp"} (default): Biological process ontology
+#'     \item \code{"cc"}: Cellular component ontology
+#'     \item \code{"mf"}: Molecular function ontology
+#'   }
+#'   The ontology type determines which ancestor mapping is used from
+#'   \code{GO.db}.
+#' 
+#' @return Returns a character matrix with 2 columns:
+#'   \itemize{
+#'     \item \code{GO_ID}: GO term identifiers, including both the original
+#'           input GO IDs and all their ancestor terms from the GO hierarchy
+#'     \item \code{EntrezID}: Entrez gene identifiers, associated with each
+#'           GO ID (both original and ancestor terms)
+#'   }
+#'   The matrix contains unique rows (duplicates are removed) and excludes
+#'   any rows with empty or NA GO IDs. Each ancestor GO term is associated
+#'   with the same Entrez IDs as its descendant term(s).
+#' 
+#'   \strong{Special cases:}
+#'   \itemize{
+#'     \item If no ancestors are found for any input GO IDs, the function
+#'           returns the original input GO IDs with their Entrez IDs
+#'     \item If the result matrix has fewer than 3 rows, the function returns
+#'           only the original input GO IDs (without ancestors)
+#'     \item The root GO term "all" is always excluded from the results
 #'   }
 #' 
-#' @return A character matrix with 2 columns:
-#'   \itemize{
-#'     \item Column 1: GO IDs (including ancestors)
-#'     \item Column 2: Entrez IDs
-#'   }
-#'   The matrix contains unique rows with non-empty GO IDs.
+#' @details
+#' This function is useful for expanding GO enrichment results to include
+#' broader (more general) GO terms in the hierarchy. For example, if a gene
+#' is annotated to "DNA repair" (GO:0006281), adding ancestors would also
+#' include broader terms like "DNA metabolic process" (GO:0006259) and
+#' "metabolic process" (GO:0008152), all associated with the same gene.
+#' 
+#' The function requires the \code{GO.db} package to be installed. If it's
+#' not available, the function will stop with an error message.
 #' 
 #' @export
 #' @author Lihua Julie Zhu, Haibo Liu
 #' @keywords misc
-#' @importFrom methods is
 #' @importFrom GO.db GOBPANCESTOR GOCCANCESTOR GOMFANCESTOR
+#' @seealso \code{\link{getEnrichedGO}} for obtaining GO enrichment results
+#'          in the required format, \code{\link[GO.db]{GOBPANCESTOR}} for
+#'          biological process ancestor mappings
 #' @examples 
-#' # Add ancestors for biological process ontology
-#' if (requireNamespace("GO.db", quietly = TRUE)) {
-#'     result <- addAncestors(go.ids, ontology = "bp")
-#'     head(result)
-#' }
+#' \dontrun{
+#' ## Example 1: Add ancestors for biological process ontology
+#' ## First, get enriched GO terms (example format)
+#' ## go.ids <- getEnrichedGO(peaks, annoData, ...)
 #' 
-#' addAncestors(go.ids, ontology="bp")
+#' ## Add ancestors to expand the GO term set
+#' result <- addAncestors(go.ids, ontology = "bp")
+#' head(result)
+#' 
+#' ## Example 2: Add ancestors for molecular function ontology
+#' result <- addAncestors(go.ids, ontology = "mf")
+#' 
+#' ## Example 3: Add ancestors for cellular component ontology
+#' result <- addAncestors(go.ids, ontology = "cc")
+#' }
 #' 
 
 addAncestors <- function(go.ids, ontology = c("bp", "cc", "mf")) {
@@ -54,12 +105,12 @@ addAncestors <- function(go.ids, ontology = c("bp", "cc", "mf")) {
         stop("Missing required parameter 'go.ids'")
     }
     
-    if (!is(go.ids, "matrix") || ncol(go.ids) < 4) {
+    if (!is.matrix(go.ids) || ncol(go.ids) < 4L) {
         stop("'go.ids' must be a matrix with at least 4 columns.\n",
              "  Column 1: GO IDs\n",
              "  Column 2: Evidence codes\n",
              "  Column 3: Ontology type\n",
-             "  Column 4: Entrez IDs")
+             "  Column 4: Entrez IDs", call. = FALSE)
     }
     
     # Get GO ancestor mappings based on ontology

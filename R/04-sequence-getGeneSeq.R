@@ -1,153 +1,235 @@
-#' Get gene sequence using the biomaRt package
+#' Get gene sequence around peak location using biomaRt
 #' 
-#' Get gene sequence using the biomaRt package
+#' @description 
+#' Retrieves genomic sequences from gene regions based on the position of a peak
+#' relative to the transcription start site (TSS). This is an internal function
+#' that extracts a sequence region of specified length (upstream + downstream)
+#' centered around the peak's position relative to the TSS.
 #' 
+#' The function intelligently handles cases where the requested sequence region
+#' extends beyond the gene boundaries by:
+#' \itemize{
+#'   \item Adjusting upstream/downstream offsets when the gene sequence is shorter
+#'         than expected
+#'   \item Using different biomaRt query strategies depending on whether the peak
+#'         is upstream, downstream, or within the gene body
+#'   \item Combining upstream and downstream sequences when the region spans
+#'         beyond the gene boundaries in both directions
+#' }
 #' 
-#' @param LocationParameters c(ensembl_gene_id, distance from the peak to the
-#' transcription start site of the gene with the above ensemblID, upstream
-#' offset from the peak, downstream offset from the peak, Gene Start, Gene End)
-#' @param mart see useMart of bioMaRt package for details
-#' @return a list with the following items \item{feature_id}{ensemble gene ID}
-#' \item{distancetoFeature}{distance from the peak to the transcriptionstart
-#' site of the gene with the above ensembl gene ID} \item{upstream}{upstream
-#' offset from the peakStart} \item{downstream}{downstream offset from the
-#' peakEnd} \item{seq}{sequence obtained around the peak with above upstream
-#' and downstream offset}
-#' @note internal function not intended to be called directly by users
+#' The function uses \code{seqType = "gene_exon_intron"} to retrieve the full
+#' gene sequence including exons and introns, then extracts the appropriate
+#' substring based on the peak's position relative to the TSS.
+#' 
+#' @param LocationParameters A numeric vector of length 6 containing:
+#'   \itemize{
+#'     \item \code{[1]}: Ensembl gene ID (character, will be coerced to character)
+#'     \item \code{[2]}: Distance from peak to TSS (numeric). Positive values
+#'           indicate the peak is downstream of TSS, negative values indicate
+#'           upstream. Zero means the peak overlaps with TSS.
+#'     \item \code{[3]}: Upstream offset (numeric). Number of base pairs to
+#'           include upstream of the peak position (or upstream of TSS if peak
+#'           is upstream of TSS).
+#'     \item \code{[4]}: Downstream offset (numeric). Number of base pairs to
+#'           include downstream of the peak position (or downstream of TSS if peak
+#'           is downstream of TSS).
+#'     \item \code{[5]}: TSS start position (numeric). The start coordinate of
+#'           the TSS region in the gene sequence.
+#'     \item \code{[6]}: TSS end position (numeric). The end coordinate of the
+#'           TSS region in the gene sequence.
+#'   }
+#'   Note: TSSStart and TSSEnd define the TSS region within the gene sequence,
+#'   not genomic coordinates.
+#' @param mart A \code{Mart} object from the biomaRt package, typically created
+#'   using \code{\link[biomaRt]{useMart}}. The mart must be configured for the
+#'   appropriate organism and dataset (e.g., "ensembl", "hsapiens_gene_ensembl").
+#'   See \code{\link[biomaRt]{useMart}} for details.
+#' 
+#' @return Returns a named list with the following elements:
+#'   \itemize{
+#'     \item \code{feature_id}: The Ensembl gene ID (character)
+#'     \item \code{distancetoFeature}: The distance from peak to TSS (numeric,
+#'           same as input LocationParameters[2])
+#'     \item \code{upstream}: The upstream offset used (numeric, may be adjusted
+#'           if gene sequence is shorter than expected)
+#'     \item \code{downstream}: The downstream offset used (numeric, same as
+#'           input LocationParameters[4])
+#'     \item \code{seq}: The retrieved DNA sequence (character). The sequence
+#'           length is approximately \code{upstream + downstream} base pairs,
+#'           centered around the peak's position relative to TSS. Returns
+#'           "No Sequence Found" if the sequence retrieval fails (NA).
+#'   }
+#' 
+#' @details
+#' 
+#' \strong{Algorithm Overview:}
+#' 
+#' The function implements a multi-step process:
+#' \enumerate{
+#'   \item Extracts parameters from \code{LocationParameters} and calculates
+#'         TSS length and total sequence length needed
+#'   \item Retrieves the full gene sequence (exons + introns) using biomaRt
+#'   \item Adjusts upstream offset if the retrieved gene sequence is shorter
+#'         than the TSS length
+#'   \item Determines which of four scenarios applies based on the relationship
+#'         between peak position, TSS boundaries, and requested offsets:
+#'         \itemize{
+#'           \item Peak is upstream of TSS and region extends beyond gene start
+#'           \item Peak is downstream of TSS and region extends beyond gene end
+#'           \item Peak is within gene body and region fits within gene boundaries
+#'           \item Region extends beyond both gene start and end
+#'         }
+#'   \item Retrieves the appropriate sequence region using biomaRt with
+#'         upstream/downstream parameters, then extracts the substring
+#'   \item Returns the sequence along with metadata
+#' }
+#' 
+#' \strong{Sequence Extraction Logic:}
+#' 
+#' The function uses different strategies depending on where the peak is located:
+#' \itemize{
+#'   \item If peak is upstream of TSS: Uses \code{upstream} parameter in biomaRt
+#'         query, then extracts substring starting from position 1
+#'   \item If peak is downstream of TSS: Uses \code{downstream} parameter in
+#'         biomaRt query, then extracts substring starting from calculated
+#'         position
+#'   \item If peak is within gene body: Retrieves full gene sequence, then
+#'         extracts substring based on peak position
+#'   \item If region spans beyond both boundaries: Combines upstream and downstream
+#'         sequences, then extracts the appropriate substring
+#' }
+#' 
+#' @note This is an internal function primarily used by
+#'       \code{\link{getAllPeakSequence}} and is not intended to be called
+#'       directly by users. Users should use \code{\link{getAllPeakSequence}}
+#'       instead, which provides a higher-level interface for retrieving
+#'       sequences for multiple peaks.
 #' @author Lihua Julie Zhu
 #' @keywords internal misc
 #' @importFrom biomaRt getSequence
+#' @seealso \code{\link{getAllPeakSequence}} for retrieving sequences for
+#'          multiple peaks, \code{\link[biomaRt]{getSequence}} for the underlying
+#'          biomaRt function
 #' @examples
+#' \dontrun{
+#' ## Example 1: Peak downstream of TSS (distance = 400 bp)
+#' library(biomaRt)
+#' mart <- useMart(biomart = "ensembl", dataset = "drerio_gene_ensembl")
+#' LocationParameters <- c("ENSDARG00000054562", 400, 750, 750, 40454140, 40454935)
+#' result <- getGeneSeq(LocationParameters, mart)
+#' nchar(result$seq)  # Should be approximately 1500 bp (750 + 750)
 #' 
+#' ## Example 2: Peak at TSS (distance = 0)
+#' LocationParameters <- c("ENSDARG00000054562", 0, 750, 750, 40454140, 40454935)
+#' result <- getGeneSeq(LocationParameters, mart)
 #' 
+#' ## Example 3: Peak upstream of TSS (negative distance)
+#' LocationParameters <- c("ENSDARG00000054562", -2, 750, 750, 40454140, 40454935)
+#' result <- getGeneSeq(LocationParameters, mart)
 #' 
-#' if (interactive())
-#' {
-#' mart <- useMart(biomart="ensembl", dataset="drerio_gene_ensembl")
-#' LocationParameters =c("ENSDARG00000054562",400, 750, 750,40454140,40454935)
-#' getGeneSeq(LocationParameters, mart)
-#' 
-#' LocationParameters =c("ENSDARG00000054562",752, 750, 750,40454140,40454935)
-#' getGeneSeq(LocationParameters, mart)
-#'  
-#' LocationParameters =c("ENSDARG00000054562",750, 750, 750,40454140,40454935)
-#' getGeneSeq(LocationParameters, mart)
-#'  
-#'  LocationParameters =c("ENSDARG00000054562",-2, 750, 750,40454140,40454935)
-#'  getGeneSeq(LocationParameters, mart)
-#' 
-#'  LocationParameters =c("ENSDARG00000054562",0, 750, 750,40454140,40454935)
-#'  getGeneSeq(LocationParameters, mart)
-#'  
-#'  LocationParameters =c("ENSDARG00000054562",2, 750, 750,40454140,40454935)
-#'  getGeneSeq(LocationParameters, mart) 
-#'  
-#'  LocationParameters =c("ENSDARG00000054562",1000, 750, 750,40454140,40454935)
-#'  getGeneSeq(LocationParameters, mart)
+#' ## Example 4: Peak far downstream (distance = 1000 bp)
+#' LocationParameters <- c("ENSDARG00000054562", 1000, 750, 750, 40454140, 40454935)
+#' result <- getGeneSeq(LocationParameters, mart)
 #' }
 #' 
 #' 
-getGeneSeq <- function(LocationParameters, mart){
-    ### ensembl_gene_id, distanceToNearestTSS, upstream, downstream, 
-    ### TSSStart, TSSEnd, mart
-    if (missing(LocationParameters) || length(LocationParameters) <6)
-    {
-        stop("No valid LocationParameters passed in. 
-             It should contain six fields as c(distanceToNearestTSS, 
-             upstream, downstream, GeneStart, GeneEnd)!")
-    }
-    if (missing(mart) || !is(mart, "Mart"))
-    {
-        stop("No valid mart object is passed in!")
-    }
-    distanceToNearestTSS = as.numeric(LocationParameters[2])
-    downstream = as.numeric(LocationParameters[4])
-    upstream = as.numeric(LocationParameters[3])
-    TSSStart = as.numeric(LocationParameters[5])
-    TSSEnd = as.numeric(LocationParameters[6])
-    
-    TSSLen = TSSEnd - TSSStart
-    seqLen = downstream + upstream
-    
-    seq = getSequence(id=as.character(LocationParameters[1]), 
-                      type="ensembl_gene_id",
-                      seqType="gene_exon_intron",
-                      mart=mart)
-    if (nchar(seq[1]) < TSSLen)
-    {
-        upstream = upstream + TSSLen - nchar(seq[1])
-    }
-    if (distanceToNearestTSS <= upstream & 
-            TSSLen - distanceToNearestTSS > downstream)
-    {
-        upstreamOffset = upstream - distanceToNearestTSS 
-        seq = getSequence(id=as.character(LocationParameters[1]),
-                          type="ensembl_gene_id",
-                          seqType="gene_exon_intron",
-                          upstream=upstreamOffset,
-                          mart=mart)
-        start = 1
-        end = seqLen + 1
-        seq1 = substr(seq[1], start, end)
-    }
-    else if (TSSLen - distanceToNearestTSS < downstream & 
-                 distanceToNearestTSS > upstream)
-    {
-        downstreamOffset = downstream - TSSLen + distanceToNearestTSS
-        seq = getSequence(id=as.character(LocationParameters[1]), 
-                          type="ensembl_gene_id",
-                          seqType="gene_exon_intron",
-                          downstream=downstreamOffset,
-                          mart=mart)
-        start = distanceToNearestTSS - upstream
-        end = distanceToNearestTSS + downstream + 1
-        seq1 = substr(seq[1], start, end)
-    }    
-    else if ( distanceToNearestTSS > upstream & 
-                  TSSLen - distanceToNearestTSS >= downstream)
-    {
-        seq = getSequence(id=as.character(LocationParameters[1]), 
-                          type="ensembl_gene_id",
-                          seqType="gene_exon_intron",
-                          mart=mart)
-        start = distanceToNearestTSS - upstream
-        end = distanceToNearestTSS + downstream + 1
-        seq1 = substr(seq[1], start, end)
-    }
-    else if (TSSLen - distanceToNearestTSS <= downstream & 
-                 distanceToNearestTSS <= upstream)
-    {
-        downstreamOffset = downstream - TSSLen + distanceToNearestTSS
-        upstreamOffset = upstream - distanceToNearestTSS
-        seq1 = getSequence(id=as.character(LocationParameters[1]), 
-                           type="ensembl_gene_id",
-                           seqType="gene_exon_intron",
-                           upstream=upstreamOffset,
-                           mart=mart)
-        seq2 = getSequence(id=as.character(LocationParameters[1]), 
-                           type="ensembl_gene_id",
-                           seqType="gene_exon_intron",
-                           downstream=downstreamOffset,
-                           mart=mart)
-        seq3 = substr(seq1[1], 1, upstreamOffset)
-        seq = paste(seq3, seq2[1], sep="")
-        start = 1
-        end = seqLen + 1
-        seq1 = substr(seq, start, end)
+getGeneSeq <- function(LocationParameters, mart) {
+    # LocationParameters: c(ensembl_gene_id, distanceToNearestTSS, upstream, 
+    #                       downstream, TSSStart, TSSEnd)
+    if (missing(LocationParameters) || length(LocationParameters) < 6L) {
+        stop("'LocationParameters' must contain 6 fields: ",
+             "c(ensembl_gene_id, distanceToNearestTSS, upstream, ",
+             "downstream, TSSStart, TSSEnd)", call. = FALSE)
     }
     
-    if (is.na(seq1))
-    {
-        seq1 ="No Sequence Found"
+    if (missing(mart) || !inherits(mart, "Mart")) {
+        stop("'mart' must be a valid Mart object from biomaRt", call. = FALSE)
     }
-    temp = c(LocationParameters[1:4], seq1)
-    dim(temp) =c(1,5)
+    distanceToNearestTSS <- as.numeric(LocationParameters[2L])
+    downstream <- as.numeric(LocationParameters[4L])
+    upstream <- as.numeric(LocationParameters[3L])
+    TSSStart <- as.numeric(LocationParameters[5L])
+    TSSEnd <- as.numeric(LocationParameters[6L])
     
-    colnames(temp) = c("feature_id", "distancetoFeature", 
+    TSSLen <- TSSEnd - TSSStart
+    seqLen <- downstream + upstream
+    
+    seq <- getSequence(id = as.character(LocationParameters[1L]), 
+                      type = "ensembl_gene_id",
+                      seqType = "gene_exon_intron",
+                      mart = mart)
+    
+    if (nchar(seq[1L]) < TSSLen) {
+        upstream <- upstream + TSSLen - nchar(seq[1L])
+    }
+    
+    if (distanceToNearestTSS <= upstream && 
+        TSSLen - distanceToNearestTSS > downstream) {
+        upstreamOffset <- upstream - distanceToNearestTSS 
+        seq <- getSequence(id = as.character(LocationParameters[1L]),
+                          type = "ensembl_gene_id",
+                          seqType = "gene_exon_intron",
+                          upstream = upstreamOffset,
+                          mart = mart)
+        start_pos <- 1L
+        end_pos <- seqLen + 1L
+        seq1 <- substr(seq[1L], start_pos, end_pos)
+    } else if (TSSLen - distanceToNearestTSS < downstream && 
+               distanceToNearestTSS > upstream) {
+        downstreamOffset <- downstream - TSSLen + distanceToNearestTSS
+        seq <- getSequence(id = as.character(LocationParameters[1L]), 
+                          type = "ensembl_gene_id",
+                          seqType = "gene_exon_intron",
+                          downstream = downstreamOffset,
+                          mart = mart)
+        start_pos <- distanceToNearestTSS - upstream
+        end_pos <- distanceToNearestTSS + downstream + 1L
+        seq1 <- substr(seq[1L], start_pos, end_pos)
+    } else if (distanceToNearestTSS > upstream && 
+               TSSLen - distanceToNearestTSS >= downstream) {
+        seq <- getSequence(id = as.character(LocationParameters[1L]), 
+                          type = "ensembl_gene_id",
+                          seqType = "gene_exon_intron",
+                          mart = mart)
+        start_pos <- distanceToNearestTSS - upstream
+        end_pos <- distanceToNearestTSS + downstream + 1L
+        seq1 <- substr(seq[1L], start_pos, end_pos)
+    } else if (TSSLen - distanceToNearestTSS <= downstream && 
+               distanceToNearestTSS <= upstream) {
+        downstreamOffset <- downstream - TSSLen + distanceToNearestTSS
+        upstreamOffset <- upstream - distanceToNearestTSS
+        seq1_obj <- getSequence(id = as.character(LocationParameters[1L]), 
+                               type = "ensembl_gene_id",
+                               seqType = "gene_exon_intron",
+                               upstream = upstreamOffset,
+                               mart = mart)
+        seq2_obj <- getSequence(id = as.character(LocationParameters[1L]), 
+                               type = "ensembl_gene_id",
+                               seqType = "gene_exon_intron",
+                               downstream = downstreamOffset,
+                               mart = mart)
+        seq3 <- substr(seq1_obj[1L], 1L, upstreamOffset)
+        seq_combined <- paste(seq3, seq2_obj[1L], sep = "")
+        start_pos <- 1L
+        end_pos <- seqLen + 1L
+        seq1 <- substr(seq_combined, start_pos, end_pos)
+    }
+    
+    if (is.na(seq1)) {
+        seq1 <- "No Sequence Found"
+    }
+    
+    temp <- c(LocationParameters[1L:4L], seq1)
+    dim(temp) <- c(1L, 5L)
+    
+    colnames(temp) <- c("feature_id", "distancetoFeature", 
                        "upstream", "downstream", "seq")
-    list(feature_id=temp[1],
-         distancetoFeature=temp[2],
-         upstream=temp[3],
-         downstream=temp[4],
-         seq=temp[5])
+    
+    list(
+        feature_id = temp[1L],
+        distancetoFeature = temp[2L],
+        upstream = temp[3L],
+        downstream = temp[4L],
+        seq = temp[5L]
+    )
 }

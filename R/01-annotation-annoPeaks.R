@@ -1,238 +1,720 @@
-#' Annotate peaks
+#' Annotate peaks to genomic features using region expansion and overlap detection
 #' 
-#' Annotate peaks by annoGR object in the given range.
+#' This function annotates peaks to genomic features (genes, transcripts, etc.)
+#' using a region-based algorithm that expands annotation regions (or peaks) by
+#' a specified distance and finds overlaps. The algorithm works in three main
+#' steps:
 #' 
+#' \enumerate{
+#'   \item \strong{Region Expansion}: Based on \code{bindingType}, either annotation
+#'         regions or peak regions are expanded by \code{bindingRegion} (e.g., 
+#'         ±5kb from TSS). This creates expanded search regions around features.
+#'   \item \strong{Overlap Detection}: Peaks that overlap with expanded annotation
+#'         regions are identified using \code{findOverlaps()}. Only overlapping
+#'         peaks are retained (non-overlapping peaks are excluded, not annotated
+#'         with NA).
+#'   \item \strong{Distance Calculation}: For overlapping peaks, distances are
+#'         calculated from peaks to original (non-expanded) feature boundaries
+#'         using GenomicRanges \code{distance()} function. If \code{select = "bestOne"},
+#'         peaks are prioritized by shortest distance, then by highest overlap score
+#'         (Jaccard index).
+#' }
 #' 
-#' @param peaks peak list, \link[GenomicRanges:GRanges-class]{GRanges} object
-#' @param annoData annotation data, \link[GenomicRanges:GRanges-class]{GRanges}
-#' object
-#' @param bindingType Specifying the criteria to associate peaks with
-#' annotation. Here is how to use it together with the parameter bindingRegion
-#' \itemize{ \item To obtain peaks within 5kb upstream and up to 3kb downstream
-#' of TSS within the gene body, set bindingType = "startSite" and bindingRegion
-#' = c(-5000, 3000) \item To obtain peaks up to 5kb upstream within the gene
-#' body and 3kb downstream of gene/Exon End, set bindingType = "endSite" and
-#' bindingRegion = c(-5000, 3000) \item To obtain peaks from 5kb upstream to
-#' 3kb downstream of genes/Exons , set bindingType = "fullRange" and
-#' bindingRegion = c(-5000, 3000) \item To obtain peaks with nearest
-#' bi-directional promoters within 5kb upstream and 3kb downstream of TSS, set
-#' bindingType = "nearestBiDirectionalPromoters" and bindingRegion = c(-5000,
-#' 3000) } \describe{ \item{startSite}{start position of the feature (strand is
-#' considered)} \item{endSite}{end position of the feature (strand is
-#' considered)} \item{fullRange}{whole range of the feature}
-#' \item{nearestBiDirectionalPromoters}{nearest promoters from both direction
-#' of the peaks (strand is considered). It will report bidirectional promoters
-#' if there are promoters in both directions in the given region (defined by
-#' bindingRegion). Otherwise, it will report the closest promoter in one
-#' direction.} }
-#' @param bindingRegion Annotation range used together with bindingType, which
-#' is a vector with two integer values, default to c (-5000, 5000). The first
-#' one must be no bigger than 0, which means upstream. And the sec ond one must
-#' be no less than 1, which means downstream (1 is the site position, 2 is the
-#' next base of the site position). For details, see bindingType.
-#' @param ignore.peak.strand ignore the peaks strand or not.
-#' @param select "all" or "bestOne". Return the annotation containing all or
-#' the best one.  The "bestOne" is selected by the shortest distance to the
-#' sites and then similarity between peak and annotations.  Ignored if
-#' bindingType is nearestBiDirectionalPromoters.
-#' @param ...  Not used.
-#' @return Output is a GRanges object of the annotated peaks.
+#' \strong{Key Characteristics:}
+#' \itemize{
+#'   \item \strong{Region-based}: Uses overlap detection with expanded regions,
+#'         not point-to-point distance calculations
+#'   \item \strong{Requires \code{bindingRegion}}: Must specify expansion distances
+#'         (e.g., \code{c(-5000, 3000)} for 5kb upstream, 3kb downstream)
+#'   \item \strong{Excludes non-overlapping peaks}: Peaks outside expanded regions
+#'         are not returned (unlike \code{annotatePeakInBatch} which returns all
+#'         peaks with NA annotations)
+#'   \item \strong{Optimized for bidirectional promoters}: Special handling for
+#'         finding promoters from both directions
+#' }
+#' 
+#' Unlike internal logic of \code{\link{annotatePeakInBatch}}, which uses point-to-point 
+#' distance calculations (e.g., distance from peak center to TSS), this function uses
+#' region expansion and overlap detection, making it better suited for queries
+#' like "find all peaks within 5kb of any TSS" or "find peaks near bidirectional
+#' promoters".
+#' 
+#' @param peaks A \link[GenomicRanges:GRanges-class]{GRanges} object containing
+#'        peaks to be annotated. If names are missing, they will be automatically
+#'        generated as "X1", "X2", etc.
+#' @param annoData A \link[GenomicRanges:GRanges-class]{GRanges} or
+#'        \code{\link{annoGR}} object containing annotation data (genes,
+#'        transcripts, etc.). The annotation object must have names for each
+#'        feature.
+#' @param bindingType A character specifying how to define the binding region
+#'        relative to features. Default is \code{"nearestBiDirectionalPromoters"}.
+#'        Available options:
+#'        \itemize{
+#'          \item \code{"startSite"}: Defines binding region relative to the
+#'                feature start site (TSS for positive strand, gene end for
+#'                negative strand). Annotation regions are expanded by
+#'                \code{bindingRegion}, but constrained to not exceed original
+#'                feature boundaries downstream. Use for promoter-proximal binding
+#'                analysis.
+#'          \item \code{"endSite"}: Defines binding region relative to the
+#'                feature end site (gene end for positive strand, TSS for
+#'                negative strand). Annotation regions are expanded by
+#'                \code{bindingRegion}, but constrained to not exceed original
+#'                feature boundaries upstream. Use for 3' end analysis.
+#'          \item \code{"fullRange"}: Uses the entire feature range. Annotation
+#'                regions are expanded by \code{bindingRegion} in both directions
+#'                without constraints. Use for gene body or full transcript
+#'                analysis.
+#'          \item \code{"nearestBiDirectionalPromoters"}: Identifies peaks near
+#'                bidirectional promoters using a two-step algorithm: (1) first
+#'                identifies candidate bidirectional promoters by finding pairs
+#'                of divergent genes (head-to-head) where their TSSs are within
+#'                \code{maxTSSDistance}, then (2) finds peaks whose centers are
+#'                within \code{maxPeakToBDPDistance} of the bidirectional promoter
+#'                centers. This matches the literature definition (Adachi et al.
+#'                2007) where bidirectional promoters are shared promoter regions
+#'                between two divergently transcribed genes. Reports annotations
+#'                for both genes in each bidirectional promoter pair. Note:
+#'                \code{bindingRegion} parameter is ignored for this bindingType.
+#'                \code{select = "bestOne"} is not supported and both genes are
+#'                always kept.
+#'          \item \code{"bothSidesNearest"} (deprecated): Similar to
+#'                \code{"nearestBiDirectionalPromoters"} but expands peak regions
+#'                instead of annotation regions. Kept for backward compatibility.
+#'        }
+#'        
+#'        \strong{How bindingType affects region expansion:}
+#'        \itemize{
+#'          \item \code{"startSite"}, \code{"endSite"}, \code{"fullRange"}:
+#'                Annotation regions are expanded by \code{bindingRegion}
+#'          \item \code{"nearestBiDirectionalPromoters"}: Uses distance-based
+#'                filtering (peak center to BDP center) instead of region expansion.
+#'                \code{bindingRegion} is ignored; use \code{maxTSSDistance} and
+#'                \code{maxPeakToBDPDistance} instead.
+#'          \item \code{"bothSidesNearest"} (deprecated): Peak regions are
+#'                expanded by \code{bindingRegion}
+#'        }
+#' 
+#' @param bindingRegion A vector with two integer values specifying relative
+#'        offsets (in base pairs) from the feature reference point defined by
+#'        \code{bindingType}. Default is \code{c(-5000, 5000)}.
+#'        \itemize{
+#'          \item First value: Upstream offset (must be <= 0, typically negative)
+#'          \item Second value: Downstream offset (must be >= 1, typically positive)
+#'        }
+#'        For example, \code{c(-5000, 3000)} means 5kb upstream and 3kb
+#'        downstream of the feature reference point. Only peaks within this
+#'        expanded region are considered for annotation.
+#'        
+#'        \strong{Note:} For \code{bindingType = "nearestBiDirectionalPromoters"},
+#'        this parameter is ignored. Use \code{maxTSSDistance} and
+#'        \code{maxPeakToBDPDistance} instead.
+#' 
+#' @param ignore.peak.strand A logical value indicating whether to ignore peak
+#'        strand information when calculating distances. When \code{TRUE}
+#'        (default), peak strand is temporarily set to "*" for distance
+#'        calculations, then restored. This is appropriate for most ChIP-seq
+#'        experiments where peaks are not strand-specific. Set to \code{FALSE}
+#'        only if you have stranded peaks (e.g., from RNA-based methods) and
+#'        want strand-aware distance calculations.
+#' 
+#' @param select A character specifying how to handle multiple overlapping
+#'        features for a single peak. Options:
+#'        \itemize{
+#'          \item \code{"all"} (default): Returns all features meeting the
+#'                association criteria for each peak. A peak may have multiple
+#'                annotations if it overlaps with multiple features.
+#'          \item \code{"bestOne"}: Returns the best feature for each peak based
+#'                on: (1) shortest distance to the feature site
+#'                (\code{distanceToSite}), then (2) highest overlapping score
+#'                (Jaccard index of peak and feature ranges). Only one annotation
+#'                per peak is returned.
+#'        }
+#'        Note: \code{select = "bestOne"} is automatically changed to "all"
+#'        when \code{bindingType = "nearestBiDirectionalPromoters"}. For
+#'        bidirectional promoters, both genes are always kept regardless of
+#'        \code{select} value.
+#' 
+#' @param maxTSSDistance A single integer value specifying the maximum distance
+#'        (in base pairs) between two divergent TSSs to be considered a
+#'        bidirectional promoter. Default is \code{1000L} (1kb). This parameter
+#'        is only used when \code{bindingType = "nearestBiDirectionalPromoters"}.
+#'        This determines which gene pairs form bidirectional promoters.
+#' 
+#' @param maxPeakToBDPDistance A single integer value specifying the maximum
+#'        distance (in base pairs) from peak center to bidirectional promoter
+#'        center for a peak to be considered "near" a bidirectional promoter.
+#'        Default is \code{200L} (200 bp). This parameter is only used when
+#'        \code{bindingType = "nearestBiDirectionalPromoters"}. This
+#'        distance-based filtering is more precise than overlap-based detection,
+#'        focusing on peaks actually centered near the bidirectional promoter.
+#' 
+#' @param ... Additional parameters (currently not used)
+#' 
+#' @return Returns a \link[GenomicRanges:GRanges-class]{GRanges} object
+#'        containing the annotated peaks. If no overlaps are found between peaks
+#'        and (expanded) annotation regions, an empty \code{GRanges} object is
+#'        returned.
+#'        
+#'        The returned object includes only peaks that overlap with (expanded)
+#'        annotation regions and the following metadata columns:
+#'        \itemize{
+#'          \item \code{peak}: The name of the peak (from \code{names(peaks)}).
+#'                If peaks had no names, auto-generated names ("X1", "X2", etc.)
+#'                are used.
+#'          \item \code{feature}: The name of the annotated feature (from
+#'                \code{names(annoData)}). Only present if \code{annoData} has
+#'                names.
+#'          \item \code{feature.ranges}: The genomic ranges of the feature
+#'                (as an \code{IRanges} object), representing the original
+#'                feature boundaries before expansion.
+#'          \item \code{feature.strand}: The strand of the feature (as a
+#'                \code{Rle} object: "+", "-", or "*").
+#'          \item \code{distance}: Distance from peak to feature using
+#'                GenomicRanges \code{distance()} function. This is the distance
+#'                between peak and feature ranges (strand-aware, but ignores peak
+#'                strand if \code{ignore.peak.strand = TRUE}). Distance is 0 for
+#'                overlapping ranges, positive for non-overlapping ranges.
+#'          \item \code{insideFeature}: Relationship between peak and feature,
+#'                determined by \code{getRelationship()} function. Possible values:
+#'                \itemize{
+#'                  \item \code{"upstream"}: Peak is upstream of the feature
+#'                  \item \code{"downstream"}: Peak is downstream of the feature
+#'                  \item \code{"inside"}: Peak is completely inside the feature
+#'                  \item \code{"overlapStart"}: Peak overlaps with the start of
+#'                        the feature
+#'                  \item \code{"overlapEnd"}: Peak overlaps with the end of the
+#'                        feature
+#'                  \item \code{"includeFeature"}: Peak completely includes the
+#'                        feature
+#'                  \item \code{"overlap"}: Peak exactly overlaps with the feature
+#'                }
+#'          \item \code{distanceToSite}: Distance from peak to the feature
+#'                reference site (TSS for \code{bindingType = "startSite"}, gene
+#'                end for \code{bindingType = "endSite"}). This uses the original
+#'                annotation ranges (before expansion) and respects
+#'                \code{ignore.peak.strand} setting. This is the distance used
+#'                for selecting "bestOne" when \code{select = "bestOne"}.
+#'        }
+#'        Additionally, all metadata columns from \code{annoData} are included
+#'        (e.g., \code{gene_id}, \code{gene_name}, \code{tx_id}, \code{tx_name},
+#'        etc., depending on the annotation source and feature type).
+#'        
+#'        \strong{Note:} For \code{bindingType = "nearestBiDirectionalPromoters"},
+#'        a peak may be associated with up to two features (one from each
+#'        direction) if bidirectional promoters are detected.
+#'        
+#'        \strong{Deprecated options:} \code{bindingType = "bothSidesNearest"}
+#'        and \code{"bothSidesNSS"} are deprecated but kept for backward
+#'        compatibility. \code{"bothSidesNSS"} is automatically converted to
+#'        \code{"nearestBiDirectionalPromoters"}.
+#' 
+#' @details
+#' 
+#' \strong{Algorithm Steps (Detailed):}
+#' 
+#' The annotation process follows these steps:
+#' 
+#' \enumerate{
+#'   \item \strong{Prepare annotation regions}: Based on \code{bindingType}, 
+#'         annotation features are converted to reference points or kept as ranges:
+#'         \itemize{
+#'           \item \code{"startSite"}: Features are reduced to TSS points (strand-aware)
+#'           \item \code{"endSite"}: Features are reduced to gene end points (strand-aware)
+#'           \item \code{"fullRange"}: Features are kept as full ranges
+#'           \item \code{"nearestBiDirectionalPromoters"}: Features are kept as ranges
+#'         }
+#'   
+#'   \item \strong{Expand regions}: Based on \code{bindingType}, regions are expanded:
+#'         \itemize{
+#'           \item \code{"startSite"}, \code{"endSite"}, \code{"fullRange"}: 
+#'                 Annotation regions are expanded by \code{bindingRegion} (e.g., 
+#'                 ±5kb from TSS). For \code{"startSite"} and \code{"endSite"}, 
+#'                 expansion is constrained to not exceed original feature boundaries.
+#'           \item \code{"nearestBiDirectionalPromoters"}: Uses \code{promoters()} 
+#'                 function to create promoter regions (upstream/downstream from TSS).
+#'           \item \code{"bothSidesNearest"} (deprecated): Peak regions are expanded 
+#'                 instead of annotation regions.
+#'         }
+#'   
+#'   \item \strong{Find overlaps}: Uses \code{findOverlaps()} to identify peaks that 
+#'         overlap with expanded annotation regions. Only overlapping peaks are 
+#'         retained. If no overlaps are found, an empty GRanges is returned.
+#'   
+#'   \item \strong{Filter for bidirectional promoters} (if applicable): For 
+#'         \code{bindingType = "nearestBiDirectionalPromoters"}, filters to keep 
+#'         peaks associated with promoters from both directions (both strands) 
+#'         or the nearest promoter in one direction.
+#'   
+#'   \item \strong{Calculate distances}: For each overlapping peak-feature pair:
+#'         \itemize{
+#'           \item \code{distance}: Distance between peak and original (non-expanded) 
+#'                 feature range using \code{distance()} function (0 for overlapping, 
+#'                 positive for non-overlapping)
+#'           \item \code{distanceToSite}: Distance from peak to feature reference 
+#'                 point (TSS for \code{"startSite"}, gene end for \code{"endSite"})
+#'         }
+#'   
+#'   \item \strong{Select best match} (if \code{select = "bestOne"}): For each peak, 
+#'         selects the best feature based on:
+#'         \enumerate{
+#'           \item Shortest \code{distanceToSite} (ascending order)
+#'           \item Highest overlap score (Jaccard index, descending order)
+#'         }
+#'         The overlap score (Jaccard index) is calculated as: 
+#'         \code{width(intersection) / width(union)} of peak and feature ranges.
+#' }
+#' 
+#' \strong{Key Differences from \code{annotatePeakInBatch}:}
+#' \itemize{
+#'   \item \strong{Algorithm}: Uses region expansion + overlap detection vs. 
+#'         point-to-point distance calculations
+#'   \item \strong{Input requirement}: Always requires \code{bindingRegion} to be 
+#'         specified (cannot be NULL)
+#'   \item \strong{Output behavior}: Returns only overlapping peaks (excludes 
+#'         non-overlapping peaks), whereas \code{annotatePeakInBatch} returns all 
+#'         peaks with NA annotations for non-matching peaks
+#'   \item \strong{Prioritization}: When \code{select = "bestOne"}, uses distance 
+#'         + Jaccard index (overlap score) for prioritization
+#'   \item \strong{Use case}: Optimized for queries like "find peaks within X kb 
+#'         of TSS" or "find peaks near bidirectional promoters"
+#' }
+#' 
+#' \strong{Region Expansion Examples:}
+#' \itemize{
+#'   \item \code{bindingType = "startSite"}, \code{bindingRegion = c(-2000, 500)}:
+#'         Creates a region from 2kb upstream to 500bp downstream of TSS. If a gene 
+#'         is 1kb long, the downstream expansion is constrained to the gene end.
+#'   \item \code{bindingType = "fullRange"}, \code{bindingRegion = c(-5000, 5000)}:
+#'         Expands the entire gene range by 5kb in both directions without constraints.
+#'   \item \code{bindingType = "nearestBiDirectionalPromoters"}, 
+#'         \code{bindingRegion = c(-5000, 3000)}: Creates promoter regions from 
+#'         5kb upstream to 3kb downstream of TSS using \code{promoters()} function.
+#' }
 #' @export
 #' @importFrom GenomeInfoDb seqlevelsStyle seqlengths
 #' @importFrom BiocGenerics strand start end width pos
 #' @importFrom S4Vectors queryHits subjectHits
-#' @author Jianhong Ou
-#' @seealso See Also as \code{\link{annotatePeakInBatch}}
-#' @keywords misc
-#' @examples
-#'     library(ensembldb)
-#'     library(EnsDb.Hsapiens.v75)
-#'     data("myPeakList")
-#'     annoGR <- toGRanges(EnsDb.Hsapiens.v75)
-#'     seqlevelsStyle(myPeakList) <- seqlevelsStyle(annoGR)
-#'     annoPeaks(myPeakList, annoGR)
+#' @author Jianhong Ou, Haibo Liu
+#' @seealso \code{\link{annotatePeakInBatch}} for more flexible annotation with
+#'          multiple output modes and point-based distance calculations,
+#'          \code{\link{annoGR}} for creating annotation objects from TxDb or
+#'          EnsDb packages
 #' 
-annoPeaks <- function(peaks, annoData, 
-                      bindingType=c("nearestBiDirectionalPromoters",
-                                    "startSite", "endSite", "fullRange"), 
-                      bindingRegion=c(-5000, 5000), 
-                      ignore.peak.strand=TRUE,
-                      select=c("all", "bestOne"), # bestOne will output the one with best score
-                      ...){
-    select <- match.arg(select)
-    if(bindingType[1] %in% 
-       c("bothSidesNearest", "nearestBiDirectionalPromoters", "bothSidesNSS")){
-        bindingType <- bindingType[1]
-        if(bindingType=="bothSidesNSS"){
-            bindingType <- "nearestBiDirectionalPromoters"
+#' @references
+#' Adachi, Noritaka et al. (2007). Bidirectional Gene Organization. 
+#' \emph{Cell}, \bold{109(7)}: 807-809.
+#' 
+#' @keywords misc
+#' 
+#' @examples
+#' \dontrun{
+#' ## Example 1: Basic usage with EnsDb
+#' library(EnsDb.Hsapiens.v75)
+#' library(ChIPpeakAnno)
+#' data("myPeakList")
+#' annoGR <- annoGR(EnsDb.Hsapiens.v75, feature="gene")
+#' seqlevelsStyle(myPeakList) <- seqlevelsStyle(annoGR)[1]
+#' 
+#' # Annotate peaks to genes within 5kb upstream and 3kb downstream of TSS
+#' annotated_peaks <- annoPeaks(myPeakList, annoGR,
+#'                              bindingType = "startSite",
+#'                              bindingRegion = c(-5000, 3000))
+#' head(annotated_peaks)
+#' 
+#' ## Example 2: Bidirectional promoter detection
+#' annotated_peaks <- annoPeaks(myPeakList, annoGR,
+#'                              bindingType = "nearestBiDirectionalPromoters",
+#'                              bindingRegion = c(-5000, 3000))
+#' 
+#' ## Example 3: Full gene range annotation
+#' annotated_peaks <- annoPeaks(myPeakList, annoGR,
+#'                              bindingType = "fullRange",
+#'                              bindingRegion = c(-5000, 5000))
+#' 
+#' ## Example 4: Select best match for each peak
+#' annotated_peaks <- annoPeaks(myPeakList, annoGR,
+#'                              bindingType = "startSite",
+#'                              bindingRegion = c(-2000, 500),
+#'                              select = "bestOne")
+#' 
+#' ## Example 5: 3' end analysis
+#' annotated_peaks <- annoPeaks(myPeakList, annoGR,
+#'                              bindingType = "endSite",
+#'                              bindingRegion = c(-5000, 3000))
+#' }
+#' 
+## Helper function to expand GRanges by binding region
+## Expands ranges by b[1] upstream and b[2] downstream, strand-aware
+.expandGRangesByBindingRegion <- function(gr, bindingRegion) {
+    str_pos <- as.character(strand(gr)) != "-"
+    # For positive strand: extend upstream (subtract) and downstream (add)
+    # For negative strand: extend upstream (add) and downstream (subtract)
+    s1 <- ifelse(
+        str_pos,
+        start(gr) + bindingRegion[1],
+        start(gr) - bindingRegion[2]
+    )
+    s1[s1 < 1L] <- 1L
+    start(gr) <- s1
+    e1 <- ifelse(
+        str_pos,
+        end(gr) + bindingRegion[2],
+        end(gr) - bindingRegion[1]
+    )
+    # Bound by chromosome lengths
+    seql <- seqlengths(gr)
+    if (length(seql) > 0L) {
+        e1_seql <- seql[as.character(seqnames(gr))]
+        e1.idx <- which(e1 > e1_seql)
+        if (length(e1.idx) > 0L) {
+            e1[e1.idx] <- e1_seql[e1.idx]
         }
-        if(select!="all"){
-            select <- "all"
-            message("nearestbiDirectionalPromoters do not support select=bestOne")
-        }
-    }else{
-        bindingType <- match.arg(bindingType)
     }
+    end(gr) <- e1
+    gr
+}
+
+annoPeaks <- function(peaks,
+                      annoData,
+                      bindingType = c("nearestBiDirectionalPromoters",
+                                     "startSite", "endSite", "fullRange"),
+                      bindingRegion = c(-5000, 5000),
+                      ignore.peak.strand = TRUE,
+                      select = c("all", "bestOne"),
+                      maxTSSDistance = 1000L,
+                      maxPeakToBDPDistance = 200L,
+                      ...) {
     stopifnot(inherits(peaks, "GRanges"))
     stopifnot(inherits(annoData, c("annoGR", "GRanges")))
+    stopifnot(length(bindingRegion) == 2L)
+    stopifnot(bindingRegion[1] <= 0L && bindingRegion[2] >= 1L)
+    stopifnot(is.numeric(maxTSSDistance))
+    stopifnot(is.numeric(maxPeakToBDPDistance))
+    select <- match.arg(select)
+    
+    maxTSSDistance <- round(maxTSSDistance[1L])
+    maxPeakToBDPDistance <- round(maxPeakToBDPDistance[1L])
+    if (bindingType[1] %in%
+        # bothSidesNearest and bothSidesNSS are deprecated, but kept for
+        # backward compatibility
+        c("bothSidesNearest", "nearestBiDirectionalPromoters", "bothSidesNSS")) {
+        bindingType <- bindingType[1]
+        if (bindingType == "bothSidesNSS") {
+            bindingType <- "nearestBiDirectionalPromoters"
+        }
+        if (select != "all") {
+            select <- "all"
+            message("nearestBiDirectionalPromoters does not support ",
+                    "select = 'bestOne'; using select = 'all'")
+        }
+    } else {
+        bindingType <- match.arg(bindingType)
+    }
+
+
     check_seqlevel <- tryCatch({
-    	seqlevelsStyle(peaks)
-    	seqlevelsStyle(annoData)
+        seqlevelsStyle(peaks)
+        seqlevelsStyle(annoData)
     }, error = function(w) {
-    	message("Warning: seqlevel style not recognized, you are probably using custom GRange objects: ", w$message)
-    	return(NA)
+        warning("seqlevel style not recognized, you are probably ",
+                "using custom GRanges objects: ", w$message)
+        return(NA)
     })
     if (!any(is.na(check_seqlevel))) {
-    	stopifnot(length(intersect(seqlevelsStyle(peaks),seqlevelsStyle(annoData)))>0)
+        stopifnot(length(intersect(seqlevelsStyle(peaks),
+                                   seqlevelsStyle(annoData))) > 0L)
     }
-    # stopifnot(length(intersect(seqlevelsStyle(peaks),seqlevelsStyle(annoData)))>0)
-    stopifnot(length(bindingRegion)==2)
-    stopifnot(bindingRegion[1]<=0 && bindingRegion[2]>=1)
-    if(ignore.peak.strand){
+    if (ignore.peak.strand) {
         peaks$peakstrand <- strand(peaks)
         strand(peaks) <- "*"
     }
-    if(is.null(names(peaks))){
-        names(peaks) <- paste0("X", 1:length(peaks))
+    if (is.null(names(peaks))) {
+        names(peaks) <- paste0("X", seq_along(peaks))
     }
+
+
     tmp <- annoData
-    annotation <- switch(bindingType,
-                         startSite={
-                             idx <- as.character(strand(tmp))=="-"
-                             start(tmp)[idx] <- end(tmp)[idx]
-                             width(tmp) <- 1
-                             tmp
-                         },
-                         endSite={
-                             idx <- as.character(strand(tmp))!="-"
-                             start(tmp)[idx] <- end(tmp)[idx]
-                             width(tmp) <- 1
-                             tmp
-                         },
-                         fullRange=annoData,
-                         bothSidesNearest=annoData,
-                         nearestBiDirectionalPromoters=annoData,
-                         annoData)
+    annotation <- switch(
+        bindingType,
+        startSite = {
+            idx <- as.character(strand(tmp)) == "-"
+            start(tmp)[idx] <- end(tmp)[idx]
+            width(tmp) <- 1L
+            tmp
+        },
+        endSite = {
+            idx <- as.character(strand(tmp)) != "-"
+            start(tmp)[idx] <- end(tmp)[idx]
+            width(tmp) <- 1L
+            tmp
+        },
+        fullRange = annoData,
+        bothSidesNearest = annoData,
+        nearestBiDirectionalPromoters = annoData,
+        annoData
+    )
     annotation.bck <- annotation
     rm(tmp)
-    if(bindingType %in% c("bothSidesNearest", "nearestBiDirectionalPromoters")){
-        if(bindingType=="bothSidesNearest"){
-            extGR <- function(a, b){
-                str_a <- as.character(strand(a))!="-"
-                s1 <- ifelse(str_a, start(a)+b[1], start(a)-b[2])
-                s1[s1<1] <- 1
-                start(a) <- s1
-                s2 <- ifelse(str_a, end(a)+b[2], end(a)-b[1])
-                s2.idx <- which(s2 > seqlengths(a)[as.character(seqnames(a))])
-                if(length(s2.idx)>0){
-                    s2[s2.idx] <- seqlengths(a)[as.character(seqnames(a[s2.idx]))]
+
+    # If bindingType is bothSidesNearest or nearestBiDirectionalPromoters,
+    # find overlaps between peaks and annotation
+    if (bindingType %in% c("bothSidesNearest", "nearestBiDirectionalPromoters")) {
+        if (bindingType == "bothSidesNearest") { # deprecated
+            # Expand peaks by bindingRegion upstream and downstream
+            peaks.tmp <- .expandGRangesByBindingRegion(peaks, bindingRegion)
+            ol <- findOverlaps(
+                query = peaks.tmp,
+                subject = annotation,
+                type = "any",
+                select = "all",
+                ignore.strand = FALSE
+            )
+        } else {
+            ## bindingType == "nearestBiDirectionalPromoters"
+            # New algorithm: First identify bidirectional promoters, then find peaks
+            # Note: bindingRegion is ignored for this bindingType in new algorithm
+            bdp_regions <- .identifyBidirectionalPromoters(annoData, maxTSSDistance)
+            
+            if (length(bdp_regions) == 0L) {
+                return(GRanges())
+            }
+            
+            # Calculate distance from peak center to BDP center
+            peak_centers <- as.integer(round((start(peaks) + end(peaks)) / 2))
+            bdp_centers <- mcols(bdp_regions)$bdp_center
+            
+            # Find peaks near bidirectional promoters (distance-based filtering)
+            peak_bdp_pairs <- list()
+            
+            for (i in seq_along(peaks)) {
+                peak_chr <- seqnames(peaks)[i]
+                peak_center <- peak_centers[i]
+                
+                # Find BDPs on the same chromosome
+                bdp_chr_idx <- seqnames(bdp_regions) == peak_chr
+                if (sum(bdp_chr_idx) == 0L) {
+                    next
                 }
-                end(a) <- s2
-                a
+                
+                bdp_chr_centers <- bdp_centers[bdp_chr_idx]
+                
+                # Calculate distances
+                distances <- abs(bdp_chr_centers - peak_center)
+                near_bdp_idx <- distances <= maxPeakToBDPDistance
+                
+                if (any(near_bdp_idx)) {
+                    # Get global indices of BDPs on this chromosome
+                    bdp_global_idx <- which(bdp_chr_idx)
+                    for (j in which(near_bdp_idx)) {
+                        peak_bdp_pairs[[length(peak_bdp_pairs) + 1L]] <- list(
+                            peak_idx = i,
+                            bdp_idx = bdp_global_idx[j],
+                            distance = distances[j]
+                        )
+                    }
+                }
             }
-            peaks.tmp <- extGR(peaks, bindingRegion)
-            ol <- findOverlaps(query=peaks.tmp, subject=annotation,
-                               type="any", select="all",
-                               ignore.strand=FALSE)
-        }else{
-            ##bindingType=="nearestBiDirectionalPromoters"
-            annotation <- promoters(annotation, 
-                                    upstream=-1*bindingRegion[1],
-                                    downstream=bindingRegion[2])
-            ol <- findOverlaps(query=peaks, subject=annotation,
-                               type="any", select="all",
-                               ignore.strand=FALSE)
-        }
-    }else{
-        idx <- as.character(strand(annotation))!="-"
-        s1 <- ifelse(idx, start(annotation)+bindingRegion[1], 
-                                    start(annotation)+1-bindingRegion[2])
-        s1[s1<1] <- 1
-        start(annotation) <- s1
-        e1 <- ifelse(idx, end(annotation)-1+bindingRegion[2],
-                                  end(annotation)-bindingRegion[1])
-        seql <- seqlengths(annotation)
-        if(length(seql)>0){
-            e1_seql <- seql[as.character(seqnames(annotation))]
-            id <- e1_seql<e1
-            id <- id[!is.na(id)]
-            if(length(id)>0) e1[id] <- e1_seql[id]
-        }
-        end(annotation) <- e1
-        if(bindingType=="startSite"){##make sure the downstream is inside gene
-            start(annotation)[!idx] <- 
-                ifelse(start(annotation)[!idx]>start(annoData)[!idx], 
-                       start(annotation)[!idx], 
-                       start(annoData)[!idx])
-            end(annotation)[idx] <- 
-                ifelse(end(annotation)[idx]<end(annoData)[idx], 
-                       end(annotation)[idx], 
-                       end(annoData)[idx])
-        }else{
-            if(bindingType=="endSite"){
-                start(annotation)[idx] <- 
-                    ifelse(start(annotation)[idx]>start(annoData)[idx], 
-                           start(annotation)[idx], 
-                           start(annoData)[idx])
-                end(annotation)[!idx] <- 
-                    ifelse(end(annotation)[!idx]<end(annoData)[!idx], 
-                           end(annotation)[!idx], 
-                           end(annoData)[!idx])
+            
+            if (length(peak_bdp_pairs) == 0L) {
+                return(GRanges())
             }
+            
+            # For bidirectional promoters, create annotations for both genes
+            # This bypasses the standard overlap filtering logic
+            all_annotated_peaks <- list()
+            
+            for (k in seq_along(peak_bdp_pairs)) {
+                peak_idx <- peak_bdp_pairs[[k]]$peak_idx
+                bdp_idx <- peak_bdp_pairs[[k]]$bdp_idx
+                bdp <- bdp_regions[bdp_idx]
+                
+                # Get original gene annotations
+                gene1_idx <- mcols(bdp)$gene1_idx
+                gene2_idx <- mcols(bdp)$gene2_idx
+                gene1_id <- mcols(bdp)$gene1_id
+                gene2_id <- mcols(bdp)$gene2_id
+                
+                if (gene1_idx > 0L && gene1_idx <= length(annoData) &&
+                    gene2_idx > 0L && gene2_idx <= length(annoData)) {
+                    gene1_anno <- annoData[gene1_idx]
+                    gene2_anno <- annoData[gene2_idx]
+                    
+                    # Create annotation for gene 1
+                    peak_gr1 <- peaks[peak_idx]
+                    peak_gr1$peak <- names(peaks)[peak_idx]
+                    if (!is.null(names(gene1_anno))) {
+                        peak_gr1$feature <- names(gene1_anno)
+                    } else {
+                        peak_gr1$feature <- gene1_id
+                    }
+                    peak_gr1$feature.ranges <- ranges(gene1_anno)
+                    peak_gr1$feature.strand <- strand(gene1_anno)
+                    peak_gr1$distance <- distance(peak_gr1, gene1_anno, ignore.strand = ignore.peak.strand)
+                    peak_gr1$distanceToSite <- peak_bdp_pairs[[k]]$distance  # Distance to BDP center
+                    relations1 <- getRelationship(peak_gr1, gene1_anno)
+                    peak_gr1$insideFeature <- relations1$insideFeature
+                    mcols(peak_gr1) <- cbind(mcols(peak_gr1), mcols(gene1_anno))
+                    
+                    # Create annotation for gene 2
+                    peak_gr2 <- peaks[peak_idx]
+                    peak_gr2$peak <- names(peaks)[peak_idx]
+                    if (!is.null(names(gene2_anno))) {
+                        peak_gr2$feature <- names(gene2_anno)
+                    } else {
+                        peak_gr2$feature <- gene2_id
+                    }
+                    peak_gr2$feature.ranges <- ranges(gene2_anno)
+                    peak_gr2$feature.strand <- strand(gene2_anno)
+                    peak_gr2$distance <- distance(peak_gr2, gene2_anno, ignore.strand = ignore.peak.strand)
+                    peak_gr2$distanceToSite <- peak_bdp_pairs[[k]]$distance  # Distance to BDP center
+                    relations2 <- getRelationship(peak_gr2, gene2_anno)
+                    peak_gr2$insideFeature <- relations2$insideFeature
+                    mcols(peak_gr2) <- cbind(mcols(peak_gr2), mcols(gene2_anno))
+                    
+                    all_annotated_peaks[[length(all_annotated_peaks) + 1L]] <- peak_gr1
+                    all_annotated_peaks[[length(all_annotated_peaks) + 1L]] <- peak_gr2
+                }
+            }
+            
+            if (length(all_annotated_peaks) == 0L) {
+                return(GRanges())
+            }
+            
+            # Combine all annotations
+            result <- do.call(c, all_annotated_peaks)
+            
+            # Handle select = "bestOne" if needed
+            if (select == "bestOne") {
+                # For bidirectional promoters, keep both genes (select = "all" behavior)
+                # But if user wants bestOne, we could prioritize by distance
+                # For now, keep all as bidirectional promoters require both genes
+                message("Note: For bidirectional promoters, both genes are kept ",
+                        "even with select = 'bestOne'")
+            }
+            
+            return(result)
         }
-        
-        ol <- findOverlaps(query=peaks, subject=annotation,
-                           type="any", select="all",
-                           ignore.strand=FALSE)
+    } else {
+        # Expand annotation by bindingRegion upstream and downstream
+        annotation <- .expandGRangesByBindingRegion(annotation, bindingRegion)
+        idx <- as.character(strand(annotation)) != "-"
+        # Constrain expanded annotation to not exceed original feature boundaries
+        if (bindingType == "startSite") {
+            ## Make sure the downstream is inside gene
+            start(annotation)[!idx] <- pmax(
+                start(annotation)[!idx],
+                start(annoData)[!idx]
+            )
+            end(annotation)[idx] <- pmin(
+                end(annotation)[idx],
+                end(annoData)[idx]
+            )
+        } else if (bindingType == "endSite") {
+            start(annotation)[idx] <- pmax(
+                start(annotation)[idx],
+                start(annoData)[idx]
+            )
+            end(annotation)[!idx] <- pmin(
+                end(annotation)[!idx],
+                end(annoData)[!idx]
+            )
+        }
+        # Find overlaps between peaks and annotation
+        ol <- findOverlaps(
+            query = peaks,
+            subject = annotation,
+            type = "any",
+            select = "all",
+            ignore.strand = FALSE
+        )
     }
-    if(length(ol)<1){
+    if (length(ol) < 1L) {
         return(GRanges())
     }
     peaks <- peaks[queryHits(ol)]
     anno <- annoData[subjectHits(ol)]
     annotation.bck.hits <- annotation.bck[subjectHits(ol)]
-    if(bindingType %in% c("bothSidesNearest", "nearestBiDirectionalPromoters")){
-        relations <- if(bindingType=="bothSidesNearest") getRelationship(peaks, anno) else getRelationship(peaks, promoters(unname(as(anno, "GRanges")), upstream=0, downstream=1))
-        ##filter resutls and save the nearest
+
+    # Filter overlaps results and save the nearest
+    if (bindingType %in% c("bothSidesNearest", "nearestBiDirectionalPromoters")) {
+        if (bindingType == "bothSidesNearest") {
+            relations <- getRelationship(peaks, anno)
+        } else {
+            relations <- getRelationship(
+                peaks,
+                promoters(
+                    unname(as(anno, "GRanges")),
+                    upstream = 0L,
+                    downstream = 1L
+                )
+            )
+        }
+        ## Filter results and save the nearest
         keep <- rep(FALSE, length(peaks))
-        anno.strand <- as.character(strand(anno))!="-"
-        if(bindingType=="nearestBiDirectionalPromoters"){
-            keep[relations$insideFeature %in% 
-                     c("includeFeature", "overlap")] <- TRUE
-            keep.left <- (relations$insideFeature %in% 
-                c("upstream", "overlapStart") & !anno.strand) |
-                (relations$insideFeature %in% "inside") | 
-                ((relations$insideFeature %in% "overlapEnd") & anno.strand)
-            keep.right <- (relations$insideFeature %in% 
-                c("upstream", "overlapStart") & anno.strand) |
-                (relations$insideFeature %in% "inside") |
-                ((relations$insideFeature %in% "overlapEnd") & !anno.strand)
+        anno.strand <- as.character(strand(anno)) != "-"
+        if (bindingType == "nearestBiDirectionalPromoters") {
+            # Keep the peaks that are inside the feature or overlap the feature
+            keep[relations$insideFeature %in%
+                 c("includeFeature", "overlap")] <- TRUE
+
+            ## 1. Keep the peaks that are upstream of the feature or overlap the
+            ##    start of the feature on the left side (on the negative strand) of
+            ##    the feature
+            ## 2. Peak is completely inside the feature
+            ## 3. Peak overlaps the end of the feature on the right side (on the
+            ##    positive strand)
+            keep.left <- (relations$insideFeature %in%
+                          c("upstream", "overlapStart") & !anno.strand) |
+                         (relations$insideFeature %in% "inside") |
+                         ((relations$insideFeature %in% "overlapEnd") &
+                          anno.strand)
+
+            # Keep the peaks that are upstream of the feature or overlap the start
+            ## 1. On the right side (on the positive strand) of the feature
+            ## 2. Peak is completely inside the feature
+            ## 3. Peak overlaps the start of the feature on the left side (on the
+            ##    negative strand)
+            keep.right <- (relations$insideFeature %in%
+                           c("upstream", "overlapStart") & anno.strand) |
+                          (relations$insideFeature %in% "inside") |
+                          ((relations$insideFeature %in% "overlapEnd") &
+                           !anno.strand)
             shortestDist <- relations$distanceToStart
-        }else{
-            keep[relations$insideFeature %in% 
-                     c("includeFeature", "inside", "overlap",
-                       "overlapEnd", "overlapStart")] <- TRUE
-            keep.left <- (relations$insideFeature=="downstream" & anno.strand) |
-                (relations$insideFeature=="upstream" & !anno.strand)
-            keep.right <- (relations$insideFeature=="upstream" & anno.strand) |
-                (relations$insideFeature=="downstream" & !anno.strand)
+        } else {
+            keep[relations$insideFeature %in%
+                 c("includeFeature", "inside", "overlap",
+                   "overlapEnd", "overlapStart")] <- TRUE
+            keep.left <- (relations$insideFeature == "downstream" &
+                          anno.strand) |
+                         (relations$insideFeature == "upstream" &
+                          !anno.strand)
+            keep.right <- (relations$insideFeature == "upstream" &
+                           anno.strand) |
+                           (relations$insideFeature == "downstream" &
+                            !anno.strand)
             shortestDist <- relations$shortestDistance
         }
-        names(shortestDist) <- 1:length(peaks)
-        whichismin <- function(.ele){
-            as.numeric(names(.ele)[.ele==min(.ele)])
+        names(shortestDist) <- seq_along(peaks)
+        whichismin <- function(.ele) {
+            as.numeric(names(.ele)[.ele == min(.ele)])
         }
-        if(sum(keep.left)>=1){
-            nearest.left <- tapply(shortestDist[keep.left], 
-                                       queryHits(ol)[keep.left],
-                                       whichismin, simplify=FALSE)
+        if (sum(keep.left) >= 1L) {
+            nearest.left <- tapply(
+                shortestDist[keep.left],
+                queryHits(ol)[keep.left],
+                whichismin,
+                simplify = FALSE
+            )
             keep[unlist(nearest.left)] <- TRUE
         }
-        if(sum(keep.right)>=1){
-            nearest.right <- 
-                tapply(shortestDist[keep.right], 
-                       queryHits(ol)[keep.right],
-                       whichismin, simplify=FALSE)
+        if (sum(keep.right) >= 1L) {
+            nearest.right <- tapply(
+                shortestDist[keep.right],
+                queryHits(ol)[keep.right],
+                whichismin,
+                simplify = FALSE
+            )
             keep[unlist(nearest.right)] <- TRUE
         }
         peaks <- peaks[keep]
@@ -240,26 +722,33 @@ annoPeaks <- function(peaks, annoData,
         annotation.bck.hits <- annotation.bck.hits[keep]
     }
     peaks$peak <- names(peaks)
-    if(!is.null(names(anno))){
+    if (!is.null(names(anno))) {
         peaks$feature <- names(anno)
     }
     peaks$feature.ranges <- unname(ranges(anno))
     peaks$feature.strand <- strand(anno)
-    peaks$distance <- distance(peaks, anno, ignore.strand=FALSE)
+    peaks$distance <- distance(peaks, anno, ignore.strand = FALSE)
     relations <- getRelationship(peaks, anno)
-    #peaks$binding.site <- relations$insideFeature
     peaks$insideFeature <- relations$insideFeature
-    peaks$distanceToSite <- distance(peaks, annotation.bck.hits, 
-                                     ignore.strand=ignore.peak.strand)
-    if(ignore.peak.strand){
+    peaks$distanceToSite <- distance(
+        peaks,
+        annotation.bck.hits,
+        ignore.strand = ignore.peak.strand
+    )
+    if (ignore.peak.strand) {
         strand(peaks) <- peaks$peakstrand
         peaks$peakstrand <- NULL
     }
     mcols(peaks) <- cbind(mcols(peaks), mcols(anno))
-    if(select=="bestOne"){
-        if(length(peaks)==0) return(peaks)
-        annoscore <- -1 * annoScore(peaks, anno)
-        peaks$ANNOPEAKS__peak.oid <- 1:length(peaks)
+    if (select == "bestOne") {
+        if (length(peaks) == 0L) {
+            return(peaks)
+        }
+        annoscore <- -1L * annoScore(peaks, anno)
+        peaks$ANNOPEAKS__peak.oid <- seq_along(peaks)
+        # Order the peaks by the peak name, the distance to the site of the
+        # feature in ascending order, and the overlapping score in descending
+        # order, then keep the first one for each peak
         peaks <- peaks[order(peaks$peak, peaks$distanceToSite, annoscore)]
         peaks <- peaks[!duplicated(peaks$peak)]
         peaks <- peaks[order(peaks$ANNOPEAKS__peak.oid)]

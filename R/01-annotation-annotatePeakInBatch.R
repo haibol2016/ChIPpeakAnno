@@ -1,127 +1,268 @@
-#' Obtain the distance to the nearest TSS, miRNA, and/or exon for a list of 
-#' peaks
+#' Annotate peak regions with genomic features (genes, TSS, exons, etc.)
 #' 
-#' Obtain the distance to the nearest TSS, miRNA, exon et al for a list of peak 
-#' locations leveraging IRanges and biomaRt package
-#' 
+#' This function annotates a set of peak regions (e.g., from ChIP-seq, ATAC-seq)
+#' by finding their relationships to genomic features such as genes, transcription
+#' start sites (TSS), or exons. It calculates distances, identifies overlaps,
+#' and determines spatial relationships (upstream, downstream, inside, etc.)
+#' between peaks and features.
 #' 
 #' @param myPeakList A \link[GenomicRanges:GRanges-class]{GRanges} object
-#' @param mart A mart object, used if AnnotationData is not supplied, see
-#' useMart of bioMaRt package for details
-#' @param featureType A charcter vector used with mart argument if
-#' AnnotationData is not supplied; choose from "TSS", "miRNA" or "Exon"
+#'        containing the peak regions to be annotated. Each element should
+#'        represent a genomic interval (peak) with seqnames, start, end, and
+#'        optionally strand information.
+#' 
+#' @param mart A \code{\link[biomaRt]{Mart}} object from the biomaRt package,
+#'        or a customized annotation of class \code{\link[GenomicRanges]{GRanges}}. 
+#'        This parameter is used to query annotation data if \code{AnnotationData} 
+#'        is not supplied. If both \code{mart} and \code{AnnotationData} are provided, 
+#'        \code{AnnotationData} takes precedence. Only needed when \code{AnnotationData}
+#'        is not provided. See \code{\link[biomaRt]{useMart}} for details.
+#' 
+#' @param featureType A character vector specifying the type of annotation to
+#'        retrieve when using \code{mart} and \code{AnnotationData} is not
+#'        supplied. Options are "TSS" (transcription start sites) or "Exon" 
+#'        (exonic regions). Note: "Exon" retrieves exon annotations, which
+#'        may include multiple exons per gene. (why exon? why not use gene? or transcript?)
+#' 
 #' @param AnnotationData A \link[GenomicRanges:GRanges-class]{GRanges} or
-#' \link{annoGR} object. It can be obtained from the function getAnnotation or
-#' customized annotation of class GRanges containing additional variable:
-#' strand (1 or + for plus strand and -1 or - for minus strand). Pre-compliled
-#' annotations, such as TSS.human.NCBI36, TSS.mouse.NCBIM37, TSS.rat.RGSC3.4
-#' and TSS.zebrafish.Zv8, are provided by this package (attach them with data()
-#' function). Another method to provide annotation data is to obtain through
-#' biomaRt in real time by using the mart and featureType option
-#' @param output \describe{ 
-#' \item{nearestLocation (default)}{will output the nearest features calculated 
-#' as PeakLoc - FeatureLocForDistance; when selected, the output can consist of 
-#' both "strictly nearest features (non-overlapping)" and "overlapping features"
-#' as long as they are the nearest}
-#' \item{overlapping}{will output overlapping features with maximum gap
-#' specified as maxgap between peak range and feature range; it is possible for 
-#' a peak to be annotated with zero ("NA" will be returned) or multiple 
-#' overlapping features if exist}
-#' \item{both}{will output all the nearest features as well as any features
-#' that overlap with the peak that is not the nearest}
-#' \item{shortestDistance}{will output the features with the shortest distance;
-#' the "shortest distance" is determined from either ends of the feature to 
-#' either ends of the peak} 
-#' \item{upstream&inside}{will output all upstream and overlapping features with 
-#' maximum gap} 
-#' \item{inside&downstream}{will output all downstream and overlapping features 
-#' with maximum gap}
-#' \item{upstream}{will output all upstream features with maximum gap} 
-#' \item{downstream}{will output all downstream features with maximum gap} 
-#' \item{upstreamORdownstream}{will output all upstream features with maximum 
-#' gap or downstream with maximum gap} 
-#' \item{nearestBiDirectionalPromoters}{will use \link{annoPeaks} to
-#' annotate peaks. Nearest promoters from both direction of the peaks (strand
-#' is considered). It will report bidirectional promoters if there are
-#' promoters in both directions in the given region (defined by bindingRegion).
-#' Otherwise, it will report the closest promoter in one direction.} }
-#' @param multiple Not applicable when output is nearest. TRUE: output multiple
-#' overlapping features for each peak. FALSE: output at most one overlapping
-#' feature for each peak. This parameter is kept for backward compatibility,
-#' please use select.
-#' @param maxgap The maximum \emph{gap} that is allowed between 2 ranges for
-#' the ranges to be considered as overlapping. The \emph{gap} between 2 ranges
-#' is the number of positions that separate them. The \emph{gap} between 2
-#' adjacent ranges is 0. By convention when one range has its start or end
-#' strictly inside the other (i.e. non-disjoint ranges), the \emph{gap} is
-#' considered to be -1.
-#' @param PeakLocForDistance Specify the location of peak for calculating
-#' distance,i.e., middle means using middle of the peak to calculate distance
-#' to feature, start means using start of the peak to calculate the distance to
-#' feature, endMinusStart means using the end of the peak to calculate the 
-#' distance to features on plus strand and the start of the peak to calculate 
-#' the distance to features on minus strand. To be compatible with previous 
-#' version, by default using start
-#' @param FeatureLocForDistance Specify the location of feature for calculating
-#' distance,i.e., middle means using middle of the feature to calculate
-#' distance of peak to feature, start means using start of the feature to
-#' calculate the distance to feature, TSS means using start of feature when
-#' feature is on plus strand and using end of feature when feature is on minus
-#' strand, geneEnd means using end of feature when feature is on plus strand
-#' and using start of feature when feature is on minus strand. To be compatible
-#' with previous version, by default using TSS
-#' @param select "all" may return multiple overlapping peaks, "first" will
-#' return the first overlapping peak, "last" will return the last overlapping
-#' peak and "arbitrary" will return one of the overlapping peaks.
-#' @param ignore.strand When set to TRUE, the strand information is ignored in
-#' the annotation. Unless you have stranded peaks and you are interested in 
-#' annotating peaks to the features in the same strand only, you should just 
-#' use the default setting ignore.strand = TRUE.
-#' @param bindingRegion Annotation range used for \link{annoPeaks}, which is a
-#' vector with two integer values, default to c (-5000, 5000). The first one
-#' must be no bigger than 0. And the sec ond one must be no less than 1. Once
-#' bindingRegion is defined, annotation will based on \link{annoPeaks}. Here is
-#' how to use it together with the parameter output and FeatureLocForDistance.
-#' \itemize{ \item To obtain peaks with nearest bi-directional promoters within
-#' 5kb upstream and 3kb downstream of TSS, set output =
-#' "nearestBiDirectionalPromoters" and bindingRegion = c(-5000, 3000) \item To
-#' obtain peaks within 5kb upstream and up to 3kb downstream of TSS within the
-#' gene body, set output="overlapping", FeatureLocForDistance="TSS" and
-#' bindingRegion = c(-5000, 3000) \item To obtain peaks up to 5kb upstream
-#' within the gene body and 3kb downstream of gene/Exon End, set
-#' output="overlapping", FeatureLocForDistance="geneEnd" and bindingRegion =
-#' c(-5000, 3000) \item To obtain peaks from 5kb upstream to 3kb downstream of
-#' genes/Exons, set output="overlapping", bindingType = "fullRange" and
-#' bindingRegion = c(-5000, 3000) } For details, see \link{annoPeaks}.
-#' @param ... Parameters could be passed to \link{annoPeaks}
-#' @return An object of \link[GenomicRanges:GRanges-class]{GRanges} with slot
-#' start holding the start position of the peak, slot end holding the end
-#' position of the peak, slot space holding the chromosome location where the
-#' peak is located, slot rownames holding the id of the peak. In addition, the
-#' following variables are included.  \item{list("feature")}{id of the feature
-#' such as ensembl gene ID} \item{list("insideFeature")}{upstream: peak resides
-#' upstream of the feature; downstream: peak resides downstream of the feature;
-#' inside: peak resides inside the feature; overlapStart: peak overlaps with
-#' the start of the feature; overlapEnd: peak overlaps with the end of the
-#' feature; includeFeature: peak include the feature entirely}
-#' \item{list("distancetoFeature")}{distance to the nearest feature such as
-#' transcription start site.  By default, the distance is calculated as the
-#' distance between the start of the binding site and the TSS that is the gene
-#' start for genes located on the forward strand and the gene end for genes
-#' located on the reverse strand. The user can specify the location of peak and
-#' location of feature for calculating this}
-#' \item{list("start_position")}{start position of the feature such as gene}
-#' \item{list("end_position")}{end position of the feature such as the gene}
-#' \item{list("strand")}{1 or + for positive strand and -1 or - for negative
-#' strand where the feature is located} \item{list("shortestDistance")}{The
-#' shortest distance from either end of peak to either end the feature.  }
-#' \item{list("fromOverlappingOrNearest")}{Relevant only when output is set to 
-#' "both". If "nearestLocation": indicates this feature's start (feature's end 
-#' for features from minus strand) is the closest to the peak start ("strictly 
-#' nearest" or "nearest overlapping"); if "Overlapping": indicates this feature 
-#' overlaps with this peak although it is not the nearest (non-nearest 
-#' overlapping) }
-#' @author Lihua Julie Zhu, Jianhong Ou
+#' \code{\link{annoGR}} object. It can be the output from the function 
+#' \code{\link{getAnnotation}} or a customized annotation of class
+#' \code{\link[GenomicRanges]{GRanges}} with additional variable:
+#' \code{strand} (1 or + for positive strand and -1 or - for negative strand). 
+#' This parameter takes precedence over \code{mart}.
+#' @param output A character, specifying what type of features meeting annotation
+#' criteria should be output. Available options are:
+#' \describe{
+#'   \item{nearestLocation (default)}{Outputs the nearest features based on the
+#'         absolute distance between reference points: 
+#'         |\code{PeakLocForDistance} - \code{FeatureLocForDistance}|. The reference
+#'         points are determined by \code{PeakLocForDistance} in the peak region
+#'         and \code{FeatureLocForDistance} in the feature region. This option
+#'         returns both non-overlapping and overlapping features, as long as they
+#'         have the minimum distance to the peak.}
+#'   \item{overlapping}{Outputs all features that overlap with peak regions, where
+#'         overlap is defined as having a gap less than or equal to \code{maxgap}
+#'         between the peak and feature boundaries. A peak may be annotated with
+#'         zero features (NA will be returned), one feature, or multiple features
+#'         depending on the number of overlapping features found.}
+#'   \item{both}{Outputs all nearest features as defined by the \code{nearestLocation} 
+#'         option, plus any additional overlapping features as defined by the 
+#'         \code{overlapping} option. This provides the most comprehensive
+#'         annotation by combining nearest location and overlap results.}
+#'   \item{shortestDistance}{Outputs features with the minimum distance to peak
+#'         regions. Distance is calculated as the shortest gap between any
+#'         boundary of the feature (start or end) and any boundary of the peak
+#'         region (start or end). This option uses \code{nearest()} from
+#'         GenomicRanges and returns both non-overlapping and overlapping
+#'         features, as long as they have the minimum distance. Unlike
+#'         \code{nearestLocation}, this does not use reference points but
+#'         considers all boundary-to-boundary distances.}
+#'   \item{upstream&inside}{Outputs all features where peaks are located either
+#'         upstream of the feature's TSS (within \code{maxgap}) or overlapping
+#'         with the feature region. Specifically, this finds peaks that overlap
+#'         with a region extending from \code{maxgap} base pairs upstream of
+#'         the feature's TSS through the entire feature body. This option
+#'         combines upstream and overlapping annotations to capture regulatory
+#'         elements in the promoter region and gene body.}
+#'   \item{inside&downstream}{Outputs all features where peaks are located either
+#'         downstream of the feature's gene 3' end (within \code{maxgap}) or overlapping
+#'         with the feature region. Specifically, this finds peaks that overlap
+#'         with a region extending from the feature start through \code{maxgap}
+#'         base pairs downstream of the feature's gene 3' end. This option requires
+#'         \code{FeatureLocForDistance} to be set to "geneEnd" and combines
+#'         downstream and overlapping annotations to capture regulatory elements
+#'         in the 3' region and gene body.}
+#'   \item{upstream}{Outputs all features where peaks are located upstream of
+#'         the feature's TSS, within the distance specified by \code{maxgap}.
+#'         This captures promoter-proximal and distal upstream regulatory
+#'         elements.}
+#'   \item{downstream}{Outputs all features where peaks are located downstream
+#'         of the feature's gene end, within the distance specified by
+#'         \code{maxgap}. This captures 3' regulatory elements and downstream
+#'         enhancers.}
+#'   \item{upstreamORdownstream}{Outputs all features that are either upstream
+#'         of TSS (within \code{maxgap}) or downstream of gene end (within
+#'         \code{maxgap}). This option captures regulatory elements in both
+#'         directions from the gene boundaries.}
+#'   \item{nearestBiDirectionalPromoters}{Uses \code{\link{annoPeaks}} to
+#'         annotate peaks. It will report bidirectional promoters if there are
+#'         promoters in both directions in the given region (defined by
+#'         \code{bindingRegion}). Otherwise, it will report the closest
+#'         promoter in one direction.}
+#' }
+#' 
+#' @param multiple A logical parameter kept for backward compatibility.
+#'        \code{TRUE} outputs multiple overlapping features for each peak;
+#'        \code{FALSE} outputs at most one overlapping feature per peak.
+#'        This parameter is deprecated. Please use \code{select} instead,
+#'        which provides more control over feature selection. When
+#'        \code{multiple = FALSE} and \code{select = "all"}, a warning is
+#'        issued and \code{select} is automatically set to "first".
+#' 
+#' @param maxgap An integer specifying the maximum gap allowed
+#'        between a peak and a feature for them to be considered as overlapping.
+#'        The gap is the number of base pairs separating the two intervals.
+#'        By convention: when intervals overlap or one is contained within the
+#'        other, the gap is 0; when intervals are disjoint, the gap is the
+#'        distance between them. Default is -1L, which means no gap is allowed
+#'        (only true overlaps are considered). Use 0 to allow adjacent intervals,
+#'        or a positive value (e.g., 1000) to allow features within 1kb of peaks.
+#' 
+#' @param PeakLocForDistance A character specifying the reference point within
+#'        each peak region used for distance calculations. Options are:
+#'        \itemize{
+#'          \item \code{"start"} (default): Use the start coordinate of the peak
+#'          \item \code{"middle"}: Use the midpoint of the peak (recommended for
+#'                variable-width peaks)
+#'          \item \code{"end"}: Use the end coordinate of the peak
+#'          \item \code{"endMinusStart"}: Strand-aware selection - uses the end
+#'                of the peak for features on the positive strand, and the start
+#'                of the peak for features on the negative strand. Useful for
+#'                strand-specific assays.
+#'        }
+#' 
+#' @param FeatureLocForDistance A character specifying the reference point within
+#'        each feature region used for distance calculations. Options are:
+#'        \itemize{
+#'          \item \code{"TSS"} (default): Strand-aware transcription start site -
+#'                uses the start of the feature for positive strand, end for
+#'                negative strand. This is the standard reference for regulatory
+#'                regions.
+#'          \item \code{"geneEnd"}: Strand-aware gene end - uses the end of the
+#'                feature for positive strand, start for negative strand. Useful
+#'                for 3' regulatory elements.
+#'          \item \code{"start"}: Always use the start coordinate of the feature
+#'          \item \code{"end"}: Always use the end coordinate of the feature
+#'          \item \code{"middle"}: Use the midpoint of the feature
+#'        }
+#'        Note: "start", "middle", and "end" are not strand-aware, only reference to
+#'        the coordinates of the feature. start is left-most (smaller coordinate), end
+#'        is right-most (larger coordinate), middle is center of the feature.
+#' 
+#' @param select A character specifying how to handle multiple overlapping
+#'        features for a single peak. Options are:
+#'        \itemize{
+#'          \item \code{"all"} (default): Return all overlapping features
+#'          \item \code{"first"}: Return the overlapping feature where the peak
+#'                start is closest to the feature start (TSS). The sorting index
+#'                is based on the absolute distance from peak start to feature
+#'                start (strand-aware: for negative strand features, this uses
+#'                peak end to feature end). Features are ordered by this distance
+#'                in ascending order, and the first (closest) is selected.
+#'          \item \code{"last"}: Return the overlapping feature where the peak
+#'                start is farthest from the feature start (TSS). Uses the same
+#'                sorting index as "first" but selects the feature with the
+#'                maximum distance.
+#'          \item \code{"arbitrary"}: Return one arbitrary overlapping feature
+#'        }
+#'        Note: This parameter only affects the \code{"overlapping"} and
+#'        \code{"both"} output modes. For \code{"nearestLocation"}, the nearest
+#'        feature is always returned regardless of this setting.
+#' 
+#' @param ignore.strand A logical indicating whether strand information should
+#'        be ignored when finding overlaps and calculating distances. When
+#'        \code{TRUE} (default), peaks are matched to features regardless of
+#'        strand, which is appropriate for most ChIP-seq experiments where
+#'        peaks are not strand-specific. Set to \code{FALSE} only if you have
+#'        stranded peaks (e.g., from strand-specific RNA-seq or certain
+#'        transcription factor binding assays) and want to match peaks only
+#'        to features on the same strand.
+#'
+#' @param bindingRegion A vector with two integer values specifying relative
+#'        offsets (in base pairs) from the feature's reference point to define
+#'        the annotation region. The first value is the upstream offset
+#'        (negative) and the second value is the downstream offset (positive),
+#'        both relative to the feature's TSS or gene end depending on
+#'        \code{FeatureLocForDistance}. Default is \code{NULL}.
+#'        
+#'        \strong{When \code{bindingRegion} triggers \code{annoPeaks()}:}
+#'        \itemize{
+#'          \item \code{bindingRegion} must have length > 1 (i.e., be a vector
+#'                with 2 values)
+#'          \item \code{bindingType} must be determinable (either provided via
+#'                \code{...} or automatically determined from \code{output} and
+#'                \code{FeatureLocForDistance})
+#'          \item When both conditions are met, annotation switches to
+#'                \link{annoPeaks} and \code{maxgap} is ignored
+#'        }
+#'        
+#'        \strong{When \code{bindingRegion} is ignored:}
+#'        \itemize{
+#'          \item \code{bindingRegion} is \code{NULL} or length <= 1, OR
+#'          \item \code{bindingType} cannot be determined (e.g., \code{output} is
+#'                not "overlapping" or "nearestBiDirectionalPromoters", or
+#'                \code{FeatureLocForDistance} is not "TSS" or "geneEnd")
+#'          \item In these cases, the internal annotation logic is used instead
+#'        }
+#'        
+#'        See the "Annotation Method Selection" section below for detailed
+#'        explanation of when each method is used. This parameter is required for
+#'        \code{output = "nearestBiDirectionalPromoters"}. Here is how to use it
+#'        together with the parameters \code{output} and \code{FeatureLocForDistance}:
+#'        \itemize{
+#'          \item To obtain peaks with nearest bi-directional promoters within
+#'                5kb upstream and 3kb downstream of TSS, set
+#'                \code{output = "nearestBiDirectionalPromoters"} and
+#'                \code{bindingRegion = c(-5000, 3000)}
+#'          \item To obtain peaks within 5kb upstream and up to 3kb downstream
+#'                of TSS within the gene body, set \code{output = "overlapping"},
+#'                \code{FeatureLocForDistance = "TSS"} and
+#'                \code{bindingRegion = c(-5000, 3000)}
+#'          \item To obtain peaks up to 5kb upstream within the gene body and
+#'                3kb downstream of gene/primary transcript end, set
+#'                \code{output = "overlapping"},
+#'                \code{FeatureLocForDistance = "geneEnd"} and
+#'                \code{bindingRegion = c(-5000, 3000)}
+#'          \item To obtain peaks from 5kb upstream to 3kb downstream of
+#'                genes/primary transcripts, set \code{output = "overlapping"},
+#'                \code{bindingType = "fullRange"} and
+#'                \code{bindingRegion = c(-5000, 3000)}
+#'        }
+#'        For more details, see \link{annoPeaks}.
+#' @param ... Additional parameters that can be passed to \link{annoPeaks}
+#' @return Returns a \link[GenomicRanges:GRanges-class]{GRanges} object with
+#' standard GRanges slots (seqnames, start, end, strand) and the following
+#' metadata columns:
+#' \describe{
+#'   \item{feature}{ID of the feature such as Ensembl gene ID}
+#'   \item{insideFeature}{Relationship between peak and feature:
+#'         \itemize{
+#'           \item \code{upstream}: peak resides upstream of the feature
+#'           \item \code{downstream}: peak resides downstream of the feature
+#'           \item \code{inside}: peak resides inside the feature
+#'           \item \code{overlapStart}: peak overlaps with the start of the
+#'                 feature
+#'           \item \code{overlapEnd}: peak overlaps with the end of the feature
+#'           \item \code{includeFeature}: peak includes the feature entirely
+#'         }
+#'   }
+#'   \item{distancetoFeature}{Distance (in base pairs) from the peak's
+#'         reference point (specified by \code{PeakLocForDistance}) to the
+#'         feature's reference point (specified by \code{FeatureLocForDistance}).
+#'         By default, this is the distance from the peak start to the TSS.
+#'         Positive values indicate the peak is downstream of the feature
+#'         reference point (for positive strand features), and negative values
+#'         indicate upstream. The sign is automatically adjusted based on feature
+#'         strand orientation.}
+#'   \item{start_position}{Start position of the feature such as gene}
+#'   \item{end_position}{End position of the feature such as gene}
+#'   \item{strand}{Strand of the feature: 1 or + for positive strand, -1 or -
+#'         for negative strand}
+#'   \item{shortestDistance}{The shortest distance from either end of peak to
+#'         either end of the feature}
+#'   \item{fromOverlappingOrNearest}{Only present when \code{output = "both"}.
+#'        Indicates the source of the annotation:
+#'        \itemize{
+#'          \item \code{"NearestLocation"}: This feature was identified as the
+#'                nearest based on reference point distance (may be overlapping
+#'                or non-overlapping)
+#'          \item \code{"Overlapping"}: This feature overlaps with the peak but
+#'                is not the nearest feature
+#'        }
+#'        This allows users to distinguish between nearest features and
+#'        additional overlapping features when using the "both" option.}
+#' }
+#' @author Lihua Julie Zhu, Jianhong Ou, Haibo Liu
 #' @seealso \link{getAnnotation}, \link{findOverlappingPeaks},
 #' \link{makeVennDiagram}, \link{addGeneIDs}, \link{peaksNearBDP},
 #' \link{summarizePatternInPeaks}, \link{annoGR}, \link{annoPeaks}
@@ -134,238 +275,326 @@
 #' -19.  Humana Press. http://dx.doi.org/10.1007/978-1-62703-607-8_8
 #' @keywords misc
 #' @export
-#' @import IRanges
-#' @import GenomicRanges
-#' @importFrom GenomeInfoDb seqlevels
+#' @importFrom GenomeInfoDb seqlevels keepSeqlevels
 #' @importFrom BiocGenerics start end width strand
-#' @importFrom S4Vectors mcols
+#' @importFrom S4Vectors mcols mcols<-
 #' @importFrom dplyr %>% filter group_by top_n
+#' 
+#' @section Annotation Method Selection:
+#' 
+#' This function uses two different annotation algorithms depending on parameter
+#' settings:
+#' 
+#' \strong{Method 1: \code{annoPeaks()} (region-based annotation)}
+#' 
+#' Used when \code{bindingRegion} is provided (length > 1) AND \code{bindingType}
+#' can be determined. The \code{bindingType} is automatically determined from:
+#' \itemize{
+#'   \item \code{output = "nearestBiDirectionalPromoters"} → 
+#'         \code{bindingType = "nearestBiDirectionalPromoters"}
+#'   \item \code{output = "overlapping"} with \code{FeatureLocForDistance = "TSS"} → 
+#'         \code{bindingType = "startSite"}
+#'   \item \code{output = "overlapping"} with \code{FeatureLocForDistance = "geneEnd"} → 
+#'         \code{bindingType = "endSite"}
+#'   \item \code{bindingType} can also be explicitly provided via \code{...}
+#' }
+#' 
+#' When this method is used:
+#' \itemize{
+#'   \item Region expansion depends on \code{bindingType}:
+#'         \itemize{
+#'           \item \code{bindingType = "startSite"}, \code{"endSite"}, or
+#'                 \code{"fullRange"}: Annotation regions are expanded by
+#'                 \code{bindingRegion} (e.g., ±5kb from TSS or gene end)
+#'           \item \code{bindingType = "nearestBiDirectionalPromoters"}:
+#'                 Annotation regions are expanded using \code{promoters()} 
+#'                 function
+#'                 with \code{bindingRegion} as upstream/downstream distances
+#'           \item \code{bindingType = "bothSidesNearest"} (deprecated):
+#'                 Peak regions are expanded by \code{bindingRegion}
+#'         }
+#'   \item Overlaps are found with expanded regions (or expanded peaks for
+#'         \code{"bothSidesNearest"})
+#'   \item Distance is calculated using GenomicRanges \code{distance()} function
+#'   \item \code{maxgap} parameter is ignored
+#'   \item Supports \code{select = "bestOne"} option (via \code{...})
+#' }
+#' 
+#' \strong{Method 2: Internal logic (point-based annotation)}
+#' 
+#' Used when:
+#' \itemize{
+#'   \item \code{bindingRegion} is \code{NULL} or length <= 1, OR
+#'   \item \code{bindingRegion} is provided but \code{bindingType} cannot be
+#'         determined (e.g., \code{output} is not "overlapping" or
+#'         "nearestBiDirectionalPromoters", or \code{FeatureLocForDistance} is not
+#'         "TSS" or "geneEnd")
+#' }
+#' 
+#' When this method is used:
+#' \itemize{
+#'   \item Distance is calculated using reference points specified by
+#'         \code{PeakLocForDistance} and \code{FeatureLocForDistance}
+#'   \item Overlap detection uses \code{maxgap} parameter
+#'   \item Supports multiple \code{output} modes: "nearestLocation", "overlapping",
+#'         "both", "shortestDistance", "upstream", "downstream", etc.
+#'   \item More flexible for point-to-point distance calculations
+#' }
+#' 
+#' \strong{Key Differences:}
+#' \itemize{
+#'   \item \code{annoPeaks()} expands annotation regions first, then finds overlaps
+#'   \item Internal logic uses reference points and \code{maxgap} for flexible
+#'         overlap detection
+#'   \item Results may differ between methods even for the same peaks
+#' }
+#' 
+#' \strong{How to Choose Which Algorithm:}
+#' 
+#' \strong{Use Method 1 (\code{annoPeaks()}) when:}
+#' \itemize{
+#'   \item You need region-based annotation (e.g., "peaks within 5kb of TSS")
+#'   \item You want to define specific upstream/downstream regions relative to
+#'         features (e.g., promoter regions, enhancer regions)
+#'   \item You need bidirectional promoter detection
+#'   \item You want to use \code{select = "bestOne"} which considers both
+#'         distance and overlapping score
+#'   \item Your research question focuses on peaks within specific genomic
+#'         regions (promoters, gene ends, full gene ranges)
+#' }
+#' 
+#' \strong{Use Method 2 (Internal logic) when:}
+#' \itemize{
+#'   \item You need flexible point-to-point distance calculations
+#'   \item You want to use different reference points for peaks and features
+#'         (e.g., peak middle to TSS, peak start to gene end)
+#'   \item You need specific \code{output} modes like "shortestDistance",
+#'         "upstream", "downstream", "upstream&inside", etc.
+#'   \item You want to use \code{maxgap} for flexible overlap detection
+#'   \item Your research question focuses on distance relationships rather
+#'         than region membership
+#'   \item You need "nearestLocation" output which finds the closest feature
+#'         based on reference point distances
+#' }
+#' 
+#' \strong{Decision Flow:}
+#' \enumerate{
+#'   \item Do you need to define specific regions (e.g., "peaks within 5kb
+#'         upstream and 3kb downstream of TSS")? 
+#'         \itemize{
+#'           \item \strong{Yes} → Use \code{bindingRegion = c(-5000, 3000)}
+#'                 with appropriate \code{output} and \code{FeatureLocForDistance}
+#'                 to trigger Method 1
+#'           \item \strong{No} → Continue to step 2
+#'         }
+#'   \item Do you need bidirectional promoter detection?
+#'         \itemize{
+#'           \item \strong{Yes} → Use \code{output = "nearestBiDirectionalPromoters"}
+#'                 with \code{bindingRegion} to trigger Method 1
+#'           \item \strong{No} → Continue to step 3
+#'         }
+#'   \item Do you need specific \code{output} modes like "shortestDistance",
+#'         "upstream", "downstream", or "nearestLocation"?
+#'         \itemize{
+#'           \item \strong{Yes} → Don't set \code{bindingRegion} (or set it to
+#'                 \code{NULL}) to use Method 2
+#'           \item \strong{No} → Continue to step 4
+#'         }
+#'   \item Do you need flexible distance calculations using different reference
+#'         points (e.g., peak middle to TSS)?
+#'         \itemize{
+#'           \item \strong{Yes} → Use Method 2 (don't set \code{bindingRegion})
+#'           \item \strong{No} → Either method works; Method 1 is simpler for
+#'                 region-based queries
+#'         }
+#' }
+#' 
+#' \strong{Examples:}
+#' \itemize{
+#'   \item \strong{Promoter analysis}: Use Method 1 with
+#'         \code{bindingRegion = c(-2000, 500)} and
+#'         \code{output = "overlapping"}
+#'   \item \strong{Nearest gene annotation}: Use Method 2 with
+#'         \code{output = "nearestLocation"} (default, no \code{bindingRegion})
+#'   \item \strong{Bidirectional promoters}: Use Method 1 with
+#'         \code{output = "nearestBiDirectionalPromoters"} and
+#'         \code{bindingRegion = c(-5000, 3000)}
+#'   \item \strong{Flexible distance calculation}: Use Method 2 with
+#'         \code{PeakLocForDistance = "middle"} and
+#'         \code{FeatureLocForDistance = "TSS"} (no \code{bindingRegion})
+#' }
+#' 
+#' @section Parameter Selection Guide:
+#' 
+#' \strong{Choosing \code{output} based on metagene pattern and research question:}
+#' \itemize{
+#'   \item \code{"nearestLocation"} (default): Use for general annotation to find
+#'         the closest gene/feature. Best when peaks show mixed patterns or when
+#'         you need a single annotation per peak. Suitable for transcription
+#'         factors with variable binding patterns or exploratory analyses.
+#'   \item \code{"overlapping"}: Use when peaks show clear enrichment patterns
+#'         (TSS, gene body, etc.) and you need all overlapping features. Essential
+#'         for histone modifications (H3K27me3, H3K36me3) that may span
+#'         multiple genes or for gene body analysis. Use with \code{bindingRegion}
+#'         or \code{bindingType} to define specific regions.
+#'   \item \code{"nearestBiDirectionalPromoters"}: Use specifically for
+#'         identifying bidirectional promoters. Requires \code{bindingRegion} to
+#'         be set. Common in CpG islands and regulatory regions where two genes
+#'         share a promoter.
+#'   \item \code{"upstream"} or \code{"downstream"}: Use when focusing on
+#'         regulatory regions (enhancers, promoters) that are typically located
+#'         upstream or downstream of genes. Useful for enhancer analysis or
+#'         when peaks show strong upstream/downstream enrichment.
+#'   \item \code{"shortestDistance"}: Use when you want the feature with the
+#'         minimum boundary-to-boundary distance regardless of overlap status.
+#'         Useful for narrow peaks from techniques like CUT&RUN or CUT&Tag.
+#' }
+#' 
+#' \strong{Choosing \code{PeakLocForDistance} based on peak width:}
+#' \itemize{
+#'   \item \code{"middle"} ⭐ (strongly recommended): Use for peaks with median
+#'         width >= 200 bp. The middle provides robust distance calculation that
+#'         is less sensitive to peak width variation. \strong{Required} for broad
+#'         peaks (>500 bp) and very broad peaks (>2000 bp) such as histone marks
+#'         (H3K27me3, H3K9me3, H3K36me3). Suitable for most ChIP-seq, ATAC-seq,
+#'         CUT&RUN, and CUT&Tag experiments.
+#'   \item \code{"start"} (default): Use only for narrow peaks (<200 bp) with
+#'         clear 5' bias or when you specifically need distance from the peak
+#'         start (e.g., certain transcription factors with directional binding).
+#'         Not recommended for broad peaks as it can give misleading distances.
+#'   \item \code{"end"}: Use for narrow peaks when you need distance from the
+#'         peak end, typically for 3' end analysis.
+#'   \item \code{"endMinusStart"}: Use for strand-specific assays where the
+#'         relevant end depends on the feature strand (e.g., RNA polymerase
+#'         binding in GRO-seq/PRO-seq data).
+#' }
+#' 
+#' \strong{Choosing \code{FeatureLocForDistance} based on target factor:}
+#' \itemize{
+#'   \item \code{"TSS"} ⭐ (default, recommended): Use for most transcription
+#'         factors and chromatin modifiers. TSS is the standard reference point
+#'         for regulatory regions and promoter analysis. Use when peaks show TSS
+#'         enrichment or for general gene annotation.
+#'   \item \code{"geneEnd"}: Use when studying 3' regulatory elements, polyA
+#'         sites, or factors known to bind near transcription termination sites.
+#'         Use when peaks show enrichment at gene ends or for 3' UTR analysis.
+#'   \item \code{"middle"}: Use for gene body analysis when you need distance
+#'         calculations relative to the center of features. Useful for broad
+#'         factors that span gene bodies.
+#'   \item \code{"start"} or \code{"end"}: Use for non-stranded features or
+#'         custom annotations where you need precise distance calculations
+#'         relative to feature boundaries.
+#' }
+#' 
+#' \strong{Setting \code{bindingRegion} based on target factor and metagene pattern:}
+#' \itemize{
+#'   \item \strong{Transcription factors (TSS enrichment)}: Use
+#'         \code{c(-2000, 500)} for standard promoter-proximal binding or
+#'         \code{c(-5000, 3000)} for extended promoter regions.
+#'   \item \strong{Histone marks - H3K4me3}: Strong at TSS, narrow peaks. Use
+#'         \code{c(-2000, 500)} with \code{PeakLocForDistance = "middle"}.
+#'   \item \strong{Histone marks - H3K27ac}: TSS and enhancers, medium peaks.
+#'         Use \code{c(-5000, 3000)}.
+#'   \item \strong{Histone marks - H3K36me3}: Gene body, broad peaks. Use
+#'         \code{bindingType = "fullRange"} (via \code{...}) with
+#'         \code{PeakLocForDistance = "middle"} (required).
+#'   \item \strong{Histone marks - H3K27me3/H3K9me3}: Broad domains, very broad
+#'         peaks. Use \code{bindingType = "fullRange"} with
+#'         \code{bindingRegion = c(-5000, 5000)} and
+#'         \code{PeakLocForDistance = "middle"} (required).
+#'   \item \strong{Histone marks - H3K4me1}: Enhancers, gene body. Use
+#'         \code{c(-5000, 5000)}.
+#'   \item \strong{Enhancers}: Can be located 10-100kb from TSS. Use
+#'         \code{c(-100000, 100000)} or larger for distal regulatory elements,
+#'         or use \code{output = "nearestLocation"} with \code{maxgap = 5000}.
+#'   \item \strong{Bidirectional promoters}: Use \code{c(-5000, 3000)} or
+#'         \code{c(-5000, 5000)} to capture the shared promoter region.
+#' }
+#' 
+#' \strong{Annotation data sources:}
+#' \itemize{
+#'   \item \strong{Recommended}: Generate annotations on-the-fly using
+#'         \code{\link{getAnnotation}} with biomaRt or \code{\link{annoGR}}
+#'         with EnsDb/TxDb packages to match your genome assembly.
+#'   \item \strong{Pre-computed TSS datasets}: Provided for examples only.
+#'         Users should generate their own annotations matching their genome
+#'         assembly.
+#' }
+#' 
 #' @examples
+#' ## Example 1: Basic usage with EnsDb
+#' \dontrun{
+#' data(myPeakList)
+#' library(EnsDb.Hsapiens.v75)
+#' annoData <- annoGR(EnsDb.Hsapiens.v75)
+#' annotatedPeak <- annotatePeakInBatch(myPeakList, AnnotationData = annoData)
+#' }
 #' 
-#' 
-#'     ## example 1: annotate myPeakList by TxDb or EnsDb.
-#'     data(myPeakList)
-#'     library(ensembldb)
-#'     library(EnsDb.Hsapiens.v75)
-#'     annoData <- annoGR(EnsDb.Hsapiens.v75)
-#'     annotatePeak = annotatePeakInBatch(myPeakList[1:6], AnnotationData=annoData)
-#'     annotatePeak
-#'     
-#'     ## example 2: annotate myPeakList (GRanges) 
-#'     ## with TSS.human.NCBI36 (Granges)
-#'     data(TSS.human.NCBI36)
-#'     annotatedPeak = annotatePeakInBatch(myPeakList[1:6], 
-#'                                         AnnotationData=TSS.human.NCBI36)
-#'     annotatedPeak
-#'     
-#'     ## example 3: you have a list of transcription factor biding sites from 
-#'     ## literature and are interested in determining the extent of the overlap 
-#'     ## to the list of peaks from your experiment. Prior calling the function 
-#'     ## annotatePeakInBatch, need to represent both dataset as GRanges 
-#'     ## where start is the start of the binding site, end is the end of the 
-#'     ## binding site, names is the name of the binding site, space and strand 
-#'     ## are the chromosome name and strand where the binding site is located.
-#'     
-#'     myexp <- GRanges(seqnames=c(6,6,6,6,5,4,4), 
-#'                      IRanges(start=c(1543200,1557200,1563000,1569800,
-#'                                      167889600,100,1000),
-#'                              end=c(1555199,1560599,1565199,1573799,
-#'                                    167893599,200,1200),
-#'                              names=c("p1","p2","p3","p4","p5","p6", "p7")), 
-#'                      strand="+")
-#'     literature <- GRanges(seqnames=c(6,6,6,6,5,4,4), 
-#'                           IRanges(start=c(1549800,1554400,1565000,1569400,
-#'                                           167888600,120,800),
-#'                                   end=c(1550599,1560799,1565399,1571199,
-#'                                         167888999,140,1400),
-#'                                   names=c("f1","f2","f3","f4","f5","f6","f7")),
-#'                           strand=rep(c("+", "-"), c(5, 2)))
-#'     annotatedPeak1 <- annotatePeakInBatch(myexp, 
-#'                                           AnnotationData=literature)
-#'     pie(table(annotatedPeak1$insideFeature))
-#'     annotatedPeak1
-#'     ### use toGRanges or rtracklayer::import to convert BED or GFF format
-#'     ###  to GRanges before calling annotatePeakInBatch
-#'     test.bed <- data.frame(space=c("4", "6"), 
-#'                            start=c("100", "1000"),
-#'                            end=c("200", "1100"), 
-#'                            name=c("peak1", "peak2"))
-#'     test.GR = toGRanges(test.bed)
-#'     annotatePeakInBatch(test.GR, AnnotationData = literature)
-#'  
-#'  library(testthat)
-#'   peak <- GRanges(seqnames = "chr1", 
-#'                   IRanges(start = 24736757, end=24737528,
-#'                           names = "testPeak"))
-#'   data(TSS.human.GRCh37)
-#'   TSS.human.GRCh37[names(TSS.human.GRCh37)== "ENSG00000001461"]
-#'   # GRanges object with 1 range and 1 metadata column:
-#'   # seqnames            ranges strand |            description
-#'   #<Rle>         <IRanges>  <Rle> |            <character>
-#'   # ENSG00000001461        1 24742285-24799466      + | NIPA-like domain con..
-#'   peak
-#'   #GRanges object with 1 range and 0 metadata columns:
-#'   #   seqnames            ranges strand
-#'   #<Rle>         <IRanges>  <Rle>
-#'   #  testPeak     chr1 24736757-24737528      *
-#'   TSS.human.GRCh37[names(TSS.human.GRCh37)== "ENSG00000001460"]
-#'   #GRanges object with 1 range and 1 metadata column:
-#'   #   seqnames            ranges strand |            description
-#'   #<Rle>         <IRanges>  <Rle> |            <character>
-#'   #   ENSG00000001460        1 24683490-24743424      - | UPF0490 protein C1or..
-#'   ap <- annotatePeakInBatch(peak, Annotation=TSS.human.GRCh37, 
-#'                             PeakLocForDistance = "start")
-#'   stopifnot(ap$feature=="ENSG00000001461")
-#'   ap <- annotatePeakInBatch(peak, Annotation=TSS.human.GRCh37,
-#'                             PeakLocForDistance = "end")
-#'   stopifnot(ap$feature=="ENSG00000001461")
-#'   ap <- annotatePeakInBatch(peak, Annotation=TSS.human.GRCh37,
-#'                             PeakLocForDistance = "middle")
-#'   stopifnot(ap$feature=="ENSG00000001461")
-#'   ap <- annotatePeakInBatch(peak, Annotation=TSS.human.GRCh37,
-#'                             PeakLocForDistance = "endMinusStart")
-#'   stopifnot(ap$feature=="ENSG00000001461")
-#'   ## Let's calculate the distances between the peak and the TSS of the genes
-#'   ## in the annotation file used for annotating the peaks.
-#'   ## Please note that we need to compute the distance using the annotation
-#'   ## file TSS.human.GRCh37.
-#'   ## If you would like to use  TxDb.Hsapiens.UCSC.hg19.knownGene, 
-#'   ## then you will need to annotate the peaks
-#'   ## using TxDb.Hsapiens.UCSC.hg19.knownGene as well.
-#'   ### using start
-#'   start(peak) -start(TSS.human.GRCh37[names(TSS.human.GRCh37)== 
-#'                                       "ENSG00000001461"]) #picked
-#'   #[1] -5528
-#'   start(peak) -end(TSS.human.GRCh37[names(TSS.human.GRCh37)==
-#'                                    "ENSG00000001460"])
-#'   #[1] -6667
-#'   #### using middle
-#'   (start(peak) + end(peak))/2 -
-#'       start(TSS.human.GRCh37[names(TSS.human.GRCh37)== "ENSG00000001461"])
-#'   #[1] -5142.5
-#'   (start(peak) + end(peak))/2 -
-#'       end(TSS.human.GRCh37[names(TSS.human.GRCh37)== "ENSG00000001460"])
-#'   # [1] 49480566
-#'   end(peak) -start(TSS.human.GRCh37[names(TSS.human.GRCh37)==
-#'                                    "ENSG00000001461"]) #picked
-#'   # [1] -4757
-#'   end(peak) -end(TSS.human.GRCh37[names(TSS.human.GRCh37)==
-#'                                  "ENSG00000001460"])
-#'   # [1] -5896
-#'   #### using endMinusStart
-#'   end(peak) - start(TSS.human.GRCh37[names(TSS.human.GRCh37)==
-#'                                     "ENSG00000001461"]) ## picked
-#'   # [1] -4575
-#'   start(peak) -end(TSS.human.GRCh37[names(TSS.human.GRCh37)==
-#'                                     "ENSG00000001460"])
-#'   #[1] -6667
-#'   ###### using txdb object to annotate the peaks
-#'   library(org.Hs.eg.db)
-#'   select(org.Hs.eg.db, key="STPG1", keytype="SYMBOL",
-#'          columns=c("ENSEMBL", "ENTREZID", "SYMBOL"))
-#'   #  SYMBOL         ENSEMBL ENTREZID
-#'   #  STPG1 ENSG00000001460    90529
-#'   select(org.Hs.eg.db, key= "ENSG00000001461", keytype="ENSEMBL",
-#'          columns=c("ENSEMBL", "ENTREZID", "SYMBOL"))
-#'   #ENSEMBL ENTREZID SYMBOL
-#'   # ENSG00000001461    57185 NIPAL3
-#'   require(TxDb.Hsapiens.UCSC.hg19.knownGene)
-#'   txdb.ann.current <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene)
-#'   # note: the annotation of STPG1 shifted from old version
-#'   # here we set the old one for the test
-#'   txdb.ann <- GRanges('chr1', IRanges(start=c(24683489, 24742245),
-#'                       end=c(24741587, 24799473)), 
-#'                       strand=c('-', '+'), gene_id=c('90529', '57185'))
-#'   names(txdb.ann) <- txdb.ann$gene_id
-#'   STPG1 <- select(org.Hs.eg.db, key="STPG1", keytype="SYMBOL",
-#'                   columns=c( "SYMBOL", "ENSEMBL", "ENTREZID"))[1,3]
-#'   NIPAL3 <- select(org.Hs.eg.db, key="NIPAL3", keytype="SYMBOL",
-#'                    columns=c( "SYMBOL", "ENSEMBL", "ENTREZID"))[1,3]
-#'   ap <- annotatePeakInBatch(peak, Annotation=txdb.ann,
-#'                             PeakLocForDistance = "start")
-#'   expect_equal(ap$feature, STPG1)
-#'   ap <- annotatePeakInBatch(peak, Annotation=txdb.ann,
-#'                             PeakLocForDistance = "end")
-#'   expect_equal(ap$feature, STPG1)
-#'   ap <- annotatePeakInBatch(peak, Annotation=txdb.ann,
-#'                             PeakLocForDistance = "middle")
-#'   expect_equal(ap$feature, STPG1)
-#'   ap <- annotatePeakInBatch(peak, Annotation=txdb.ann,
-#'                             PeakLocForDistance = "endMinusStart")
-#'   expect_equal(ap$feature, NIPAL3)
-#'   txdb.ann.current[NIPAL3]
-#'   txdb.ann[txdb.ann$gene_id == NIPAL3]
-#'   #  GRanges object with 1 range and 1 metadata column:
-#'   #    seqnames            ranges strand |     gene_id
-#'   #  <Rle>         <IRanges>  <Rle> | <character>
-#'   #   57185     chr1 24742245-24799473      + |       57185
-#'   #-------
-#'   txdb.ann.current[STPG1]
-#'   txdb.ann[txdb.ann$gene_id == STPG1]
-#'   #   GRanges object with 1 range and 1 metadata column:
-#'   #     seqnames            ranges strand |     gene_id
-#'   #  <Rle>         <IRanges>  <Rle> | <character>
-#'   #     90529     chr1 24683489-24741587      - |       90529
+#' ## Example 2: Using biomaRt to generate annotation matching your genome assembly
+#' \dontrun{
+#' library(biomaRt)
+#' data(myPeakList)
+#' mart <- useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+#' TSS <- getAnnotation(mart, featureType = "TSS")
+#' annotatedPeak <- annotatePeakInBatch(myPeakList, 
+#'                                       AnnotationData = TSS,
+#'                                       PeakLocForDistance = "middle")
+#' }
 #' 
 annotatePeakInBatch <-
-    function (myPeakList, mart, featureType = c("TSS", "miRNA", "Exon"),
-              AnnotationData, 
-              output = c("nearestLocation", "overlapping", "both", 
-                         "shortestDistance", "inside",
-                         "upstream&inside", "inside&downstream",
-                         "upstream", "downstream", 
-                         "upstreamORdownstream", 
+    function (myPeakList, 
+              mart, 
+              featureType = c("TSS", "Exon"), 
+              AnnotationData,
+              output = c("nearestLocation", 
+                         "overlapping", 
+                         "both", 
+                         "shortestDistance", 
+                         "inside",
+                         "upstream&inside", 
+                         "inside&downstream",
+                         "upstream", 
+                         "downstream", 
+                         "upstreamORdownstream",
+                         "upstream2downstream",
                          "nearestBiDirectionalPromoters"),
-              multiple = c(TRUE,FALSE), maxgap = -1L,
-              PeakLocForDistance=c("start","middle","end", "endMinusStart"),
-              FeatureLocForDistance=c("TSS","middle","start","end", "geneEnd"),
-              select=c("all", "first", "last", "arbitrary"),
-              ignore.strand=TRUE, bindingRegion=NULL, ...)
+              multiple = c(TRUE,FALSE), 
+              maxgap = -1L,
+              PeakLocForDistance = c("start", "middle", "end", "endMinusStart"),
+              FeatureLocForDistance = c("TSS", "middle", "start", "end", "geneEnd"),
+              select = c("all", "first", "last", "arbitrary"),
+              ignore.strand = TRUE,
+              bindingRegion = NULL, ...)
     {
-        if(output[1]=="nearestStart") output <- "nearestLocation"
-        featureType = match.arg(featureType)
-        PeakLocForDistance = match.arg(PeakLocForDistance)
-        FeatureLocForDistance = match.arg(FeatureLocForDistance)
-        output = match.arg(output)
-        select = match.arg(select)
-        multiple = multiple[1]
-        if (PeakLocForDistance == "endMinusStart")
-        {
-            if (missing(AnnotationData) || length(AnnotationData) == 0)
-             {
-              if (missing(mart)) {
-                stop("Error in querying biomart database.
-                     No valid mart object is passed in!
-                     Suggest call getAnnotation before calling
-                     annotatePeakInBatch")
-              }
-              else if(!is(mart, "Mart")){
-                if(is(mart, "GRanges")){
-                    warning("AnnotationData is missing, and a GRanges is passed
-                            to mart parameter. Trying to annotate peaks by
-                            the GRanges you input.")
-                    AnnotationData <- mart
-                    mart <- NULL
-                } else {
-                    stop("Error in querying biomart database.
-                     No valid mart object is passed in!
-                     Suggest call getAnnotation before calling
-                     annotatePeakInBatch")
-                }
-            }
-            else {
-                AnnotationData <- getAnnotation(mart, featureType = featureType)
-            }
-          } 
-          if (!length(names(AnnotationData)) || any(is.na(names(AnnotationData))))
-          {
-             names(AnnotationData) <- paste0("ann", seq_along(AnnotationData))
-          }
-          plusAnno = AnnotationData[strand(AnnotationData) == "+"]
-          minusAnno = AnnotationData[strand(AnnotationData) == "-"]
-          if (length(plusAnno) > 0) 
-             r.plus <- annotatePeakInBatch(myPeakList, 
-                    AnnotationData =  plusAnno,
+        # check the input arguments
+        if (missing(myPeakList)) stop("myPeakList is required!")
+        if (!inherits(myPeakList, "GRanges")) {
+            stop("myPeakList needs to be a GRanges object", 
+                 call. = FALSE)
+        }
+        if (output[1] == "nearestStart") {
+            output <- "nearestLocation"
+        }
+        featureType <- match.arg(featureType)
+        PeakLocForDistance <- match.arg(PeakLocForDistance)
+        FeatureLocForDistance <- match.arg(FeatureLocForDistance)
+        output <- match.arg(output)
+        select <- match.arg(select)
+        multiple <- multiple[1]
+
+        # handle the case when PeakLocForDistance is "endMinusStart"
+        if (PeakLocForDistance == "endMinusStart") {
+            AnnotationData <- .prepareAnnotationData(mart, 
+                                                     AnnotationData, 
+                                                     featureType)
+            AnnotationData <- formatSeqnames(AnnotationData, myPeakList)
+
+            plusAnno <- AnnotationData[strand(AnnotationData) == "+"]
+            minusAnno <- AnnotationData[strand(AnnotationData) == "-"]
+            if (length(plusAnno) > 0L) {
+                # recursive call to annotatePeakInBatch
+                r.plus <- .annotatePeakInBatch(myPeakList, 
+                    AnnotationData = plusAnno,
                     featureType = featureType,
                     PeakLocForDistance = "end",
                     output = output,
@@ -375,458 +604,248 @@ annotatePeakInBatch <-
                     FeatureLocForDistance = FeatureLocForDistance,
                     ignore.strand = TRUE,
                     bindingRegion = bindingRegion, ...)
-          if (length(minusAnno) > 0)  
-              r.minus <- annotatePeakInBatch(myPeakList, 
-                    AnnotationData =  minusAnno,
-                    featureType = featureType,
-                    PeakLocForDistance = "start",
-                    output = output,
-                    multiple = multiple,
-                    select = select,
-                    maxgap = maxgap,
-                    FeatureLocForDistance = FeatureLocForDistance,
-                    ignore.strand = TRUE,
-                    bindingRegion = bindingRegion, ...)
-         if (length(plusAnno) > 0 & length(minusAnno) == 0) {
-             return(r.plus)
-         }
-         else if (length(plusAnno) == 0 & length(minusAnno) > 0) {
-	     return(r.minus)
-         }
-         else if (length(plusAnno) > 0 & length(minusAnno) > 0) {
-             r.both  <- c(r.plus, r.minus) 
-             r.both <- r.both[!is.na(r.both$fromOverlappingOrNearest)]
-             r.both.df <- cbind(uid = names(r.both), as.data.frame(r.both))
-             r.both.df %>%
-                filter(fromOverlappingOrNearest == "NearestLocation") %>%        
-    		group_by(peak) %>%
-                top_n(-1, abs(distancetoFeature)) -> r.n.df
-	     if (nrow(r.n.df) == 0)
-		return(r.both)
-             else if (length(r.both[r.both$fromOverlappingOrNearest != "NearestLocation"]) == 0)
-		return(r.both[names(r.both) %in% r.n.df$uid & !is.na(r.both$feature)]) 
-             else
-         	return(r.both[(names(r.both) %in% r.n.df$uid |
-		    r.both$fromOverlappingOrNearest != "NearestLocation") & !is.na(r.both$feature)])
-          }
-       } ### end of if endMinusStart
-       if(output[1]=="nearestStart") output <- "nearestLocation"
-           featureType = match.arg(featureType)
-           PeakLocForDistance = match.arg(PeakLocForDistance)
-           FeatureLocForDistance = match.arg(FeatureLocForDistance)
-           output = match.arg(output)
-           select = match.arg(select)
-           multiple = multiple[1]
-
-      if ((output == "overlapping" || output == "both")
-            && select =="all" && multiple==FALSE) {
-            warning("Please use select instead of multiple!")
-            select = "first"
-      }
-      if(output=="upstream&inside"){
-            if(FeatureLocForDistance!="TSS") {
-                FeatureLocForDistance <- "TSS"
-                warning("FeatureLocForDistance is set to TSS")
             }
-            select <- "all"
-        }
-      if(output=="inside&downstream"){
-            if(FeatureLocForDistance!="geneEnd"){
-                FeatureLocForDistance <- "geneEnd"
-                warning("FeatureLocForDistance is set to geneEnd")
+            if (length(minusAnno) > 0L) {
+                  r.minus <- .annotatePeakInBatch(myPeakList, 
+                                                AnnotationData = minusAnno,
+                                                featureType = featureType,
+                                                PeakLocForDistance = "start",
+                                                output = output,
+                                                multiple = multiple,
+                                                select = select,
+                                                maxgap = maxgap,
+                                                FeatureLocForDistance = FeatureLocForDistance,
+                                                ignore.strand = TRUE,
+                                                bindingRegion = bindingRegion, ...)
             }
-            select <- "all"
-      }
-      if (missing(myPeakList)) stop("Missing required argument myPeakList!")
-        if (!is(myPeakList, "GRanges")) {
-            stop("No valid myPeakList passed in. It needs to be GRanges object")
-        }
-        if (missing(AnnotationData)) {
-            message("No AnnotationData as GRanges is passed in, 
-                    so now querying biomart database for AnnotationData ....")
-            if (missing(mart)) {
-                stop("Error in querying biomart database. 
-                     No valid mart object is passed in! 
-                     Suggest call getAnnotation before calling 
-                     annotatePeakInBatch")
-            }
-            if(!is(mart, "Mart")){
-                if(is(mart, "GRanges")){
-                    warning("AnnotationData is missing, and a GRanges is passed
-                            to mart parameter. Trying to annotate peaks by 
-                            the GRanges you input.")
-                    AnnotationData <- mart
-                    mart <- NULL
-                }else{
-                    stop("Error in querying biomart database. 
-                     No valid mart object is passed in! 
-                     Suggest call getAnnotation before calling 
-                     annotatePeakInBatch")
+            if (length(plusAnno) > 0L && length(minusAnno) == 0L) {
+                return(r.plus)
+            } else if (length(plusAnno) == 0L && length(minusAnno) > 0L) {
+                return(r.minus)
+            } else if (length(plusAnno) > 0L && length(minusAnno) > 0L) {
+                r.both <- c(r.plus, r.minus) 
+                r.both <- r.both[!is.na(r.both$fromOverlappingOrNearest)]
+                r.both.df <- cbind(uid = names(r.both), as.data.frame(r.both))
+                r.n.df <- r.both.df %>%
+                    filter(fromOverlappingOrNearest == "NearestLocation") %>%
+                    group_by(peak) %>%
+                    top_n(-1, abs(distancetoFeature))
+                if (nrow(r.n.df) == 0L) {
+                    return(r.both)
+                } else if (length(r.both[r.both$fromOverlappingOrNearest != "NearestLocation"]) == 0L) {
+                    return(r.both[names(r.both) %in% r.n.df$uid & !is.na(r.both$feature)]) 
+                } else {
+                    return(r.both[(names(r.both) %in% r.n.df$uid |
+                                r.both$fromOverlappingOrNearest != "NearestLocation") & 
+                                !is.na(r.both$feature)])
                 }
-            }else{
-                AnnotationData <- getAnnotation(mart, featureType = featureType)
-                message("Done querying biomart database, start annotating ....
-                        Better way would be calling getAnnotation before 
-                        calling annotatePeakInBatch")
             }
-       }
-      if (!inherits(AnnotationData, 
-                      c("GRanges", "annoGR"))) {
-            stop("AnnotationData needs to be GRanges or annoGR object")
-       }
-       if (!length(names(AnnotationData)) || any(is.na(names(AnnotationData))))
-       {
+        } # end of if endMinusStart
+
+        if ((output == "overlapping" || output == "both") &&
+            select == "all" && multiple == FALSE) { 
+            warning("Please use select instead of multiple!")
+            select <- "first"
+        }
+        if (output == "upstream&inside") {
+            if (FeatureLocForDistance != "TSS") {
+                FeatureLocForDistance <- "TSS"
+                warning("`FeatureLocForDistance` is set to TSS")
+            }
+            select <- "all" 
+        }
+        if (output == "inside&downstream") {
+            if (FeatureLocForDistance != "geneEnd") {
+                FeatureLocForDistance <- "geneEnd"
+                warning("`FeatureLocForDistance` is set to geneEnd")
+            }
+            select <- "all"
+        }
+    
+        if (missing(AnnotationData)) {
+            message("No AnnotationData as GRanges is passed in, ",
+                    "so now querying biomart database for AnnotationData ....")
+            AnnotationData <- .prepareAnnotationData(mart, AnnotationData, featureType)
+        }
+        
+        if (!inherits(AnnotationData, c("GRanges", "annoGR"))) {
+            stop("AnnotationData needs to be a GRanges or annoGR object.",
+                 call. = FALSE)
+        }
+        if (!length(names(AnnotationData)) || any(is.na(names(AnnotationData))))
+        {
              names(AnnotationData) <- paste0("ann", seq_along(AnnotationData))
-       }
-       if(inherits(AnnotationData, "annoGR")){
+        }
+        if(inherits(AnnotationData, "annoGR")){
             TSS.ordered <- as(AnnotationData, "GRanges")
-       }else{
+        } else {
             TSS.ordered <- AnnotationData
-       }
-        nAnno <- length(TSS.ordered)
-        
+        }
+
         rm(AnnotationData)
-        rm(nAnno)
-        
-      if(length(bindingRegion)>1){
-            message("Annotate peaks by annoPeaks, see ?annoPeaks for details.")
-            ## FeatureLocForDistance=c("TSS","middle","start","end", "geneEnd")
-            ##"startSite", "endSite", "fullRange"
+        gc()
+
+        # NOTES: annoPeaks() is used for peak-centric annotation when valid `bindingRegion`
+        # is provided and `bindingType` can be determined.
+        if (length(bindingRegion) > 1L) {
+            message("Annotate peaks using the `annoPeaks()` function with `bindingRegion` ",
+                    "and `bindingType` parameters, see ?annoPeaks for details.")
             dots <- list(...)
-            if(!"bindingType" %in% names(dots)){
-                if(output %in% 
-                   c("overlapping", 
-                     "nearestBiDirectionalPromoters")){
+            if (!"bindingType" %in% names(dots)) {
+                if (output %in% 
+                    c("overlapping", 
+                      "nearestBiDirectionalPromoters")) {
                     bindingType <- switch(
                         output,
-                        nearestBiDirectionalPromoters="nearestBiDirectionalPromoters",
-                        overlapping=switch(FeatureLocForDistance,
-                                           TSS="startSite",
-                                           geneEnd="endSite",
-                                           NA),
+                        nearestBiDirectionalPromoters = "nearestBiDirectionalPromoters",
+                        overlapping = switch(FeatureLocForDistance,
+                                            TSS = "startSite",
+                                            geneEnd = "endSite", 
+                                            NA),
                         NA
                     )
                 }
-            }else{
-              bindingType <- dots$bindingType
+            } else {
+                bindingType <- dots$bindingType
             }
-            if(exists("bindingType") && !is.na(bindingType)){
-                message("maxgap will be ignored.")
+            if (exists("bindingType") && !is.na(bindingType)) {
+                message("`maxgap` will be ignored.")
                 dots$peak <- myPeakList
                 dots$annoData <- TSS.ordered
                 dots$bindingType <- bindingType
                 dots$bindingRegion <- bindingRegion
                 return(do.call(annoPeaks, dots))
-            }else{
-                message("bindingRegion will be ignored.")
+            } else {
+                message("`bindingRegion` will be ignored.")
+                bindingRegion <- NULL
             }
-      }
+        }
         
-      if (is.null(names(TSS.ordered))){
-            names(TSS.ordered) <- formatC(seq_along(TSS.ordered),
-                                          width=nchar(length(TSS.ordered)),
-                                          flag="0")
-        }
-      if (is.null(names(myPeakList))) {
-            names(myPeakList) <- formatC(seq_along(myPeakList),
-                                         width = nchar(length(myPeakList)),
-                                         flag = "0")
-        }
-      if(any(duplicated(names(myPeakList)))){
-            warning("Found duplicated names in myPeakList. 
-                    Changing the peak names ...")
-            names(myPeakList) <- formatC(seq_along(myPeakList),
-                                         width = nchar(length(myPeakList)),
-                                         flag = "0")
-       }
-        savedNames <- names(myPeakList)
+        results <- .annotatePeakInBatch(myPeakList, 
+                             TSS.ordered = TSS.ordered,
+                             featureType = featureType,
+                             output = output,
+                             multiple = multiple,
+                             select = select,
+                             maxgap = maxgap,
+                             FeatureLocForDistance = FeatureLocForDistance,
+                             ignore.strand = ignore.strand,
+                             bindingRegion = bindingRegion, ...)
+        results
+    }
+
+.annotatePeakInBatch <- function(myPeakList,
+                                TSS.ordered, 
+                                featureType, 
+                                output, 
+                                multiple, 
+                                select, 
+                                maxgap, 
+                                FeatureLocForDistance,
+                                ignore.strand, 
+                                bindingRegion, ...) {
+    if (output == "nearestBiDirectionalPromoters" && length(bindingRegion) <= 1L) {
+        stop("If `output` is `nearestBiDirectionalPromoters`, ",
+            "please set bindingRegion. See ?annoPeaks for details.")
+    }
+    TSS.ordered <- .prepareGRangesNames(TSS.ordered)
+    myPeakList <- .prepareGRangesNames(myPeakList)
+    savedNames <- names(myPeakList)
+    
+    ##clear seqnames, the format should be chr+NUM
+    ##TODO, how about the seqname not start with chr?
+    ## fix by seqlevelsStyle
+    TSS.ordered <- formatSeqnames(TSS.ordered, myPeakList)
+    #myPeakList <- formatSeqnames(myPeakList)
+    if (!all(seqlevels(myPeakList) %in% seqlevels(TSS.ordered))) {
+        warning("Not all the seqnames of `myPeakList` is ",
+                "in the `AnnotationData`.")
+    }
+    
+    # Process chromosome by chromosome for efficiency when there are multiple chromosomes
+    # This reduces memory usage and leverages GenomicRanges' internal optimization
+    peaks_by_chr <- split(myPeakList, as.character(seqnames(myPeakList))) 
+    anno_by_chr <- split(TSS.ordered, as.character(seqnames(TSS.ordered)))
+
+    # Only split by chromosome if there are multiple chromosomes
+    # This prevents infinite recursion when processing individual chromosomes
+    unique_chr_peaks <- unique(as.character(seqnames(myPeakList)))
+
+    results <- lapply(unique_chr_peaks, function(chr) {
+            # if there is no annotation for this chromosome, return peaks with NA annotations
+            if (!chr %in% names(anno_by_chr) || length(anno_by_chr[[chr]]) == 0L) {
+                peaks_chr <- peaks_by_chr[[chr]]
+                if (length(peaks_chr) > 0L) {
+                    peaks_chr$peak <- names(peaks_chr)
+                    for (col in c("feature", "start_position", "end_position", 
+                                    "feature_strand", "insideFeature", 
+                                    "distancetoFeature", "shortestDistance",
+                                    "fromOverlappingOrNearest")) {
+                        mcols(peaks_chr)[, col] <- NA
+                    }
+                }
+                return(peaks_chr)
+            }
+    
+        ### STEP1: Get nearest annotation for each peak
+        ### Use distanceToNearest(query, subject, ignore.strand=T/F, select)
+        ### The distance obtained here is the shortestDistance
+        ### select could only be arbitrary or all,
+        ### if it is "first" or "last", use "all" instead.
+        ### if output=="nearest", annotation should only consider the start point
+        ### ignore.strand <- all(strand(myPeakList)=="*") ||
+        ###                 all(strand(TSS.ordered)=="*") ||
+        ###                 all(strand(myPeakList)=="+")
+        nsel <- ifelse(select %in% c("all", "first", "last"),
+                    "all", "arbitrary")
+        featureGR <- .prepareFeatureLocations(anno_by_chr[[chr]], FeatureLocForDistance)
+        myPeaksGR <- .preparePeakLocations(myPeakList[[chr]], PeakLocForDistance)
         
-        ##clear seqnames, the format should be chr+NUM
-        ##TODO, how about the seqname not start with chr?
-        ## fix by seqlevelsStyle
-        TSS.ordered <- formatSeqnames(TSS.ordered, myPeakList)
-        #myPeakList <- formatSeqnames(myPeakList)
-      if(!all(seqlevels(myPeakList) %in% seqlevels(TSS.ordered))){
-            warning("not all the seqnames of myPeakList is 
-                    in the AnnotationData.")
-      }
-        
-      if(length(myPeakList)>10000){
-            ##huge dataset
-            myPeakList <- split(myPeakList, 
-                                cut(seq_along(myPeakList),
-                                    ceiling(length(myPeakList)/5000)))
-            myPeakList <- lapply(myPeakList, annotatePeakInBatch, 
-                                 AnnotationData=TSS.ordered, 
-                                 output = output, maxgap = maxgap,
-                                 PeakLocForDistance=PeakLocForDistance,
-                                 FeatureLocForDistance=FeatureLocForDistance,
-                                 select=select,
-                                 ignore.strand=ignore.strand)
-            names(myPeakList) <- NULL
-            myPeakList <- unlist(GRangesList(myPeakList))
-            names(myPeakList) <- make.names(paste(myPeakList$peak, 
-                                                  myPeakList$feature))
-            ##myPeakList
-            return(myPeakList)
-      }
-        ###STEP1 get nearst annotation for each peak, 
-        ###use distanceToNearest(query, subject, ignore.strand=T/F, select)
-        ## the distance got here is the shortestDistance
-        ## select could only be arbitrary or all, 
-        ## if it is "first" or "last", use "all" instead.
-        ## if output=="nearest", annotation should only consider the start point
-        ##         ignore.strand <- all(strand(myPeakList)=="*") || 
-        ##             all(strand(TSS.ordered)=="*") || 
-        ##             all(strand(myPeakList)=="+")
-        nsel <- ifelse(select %in% c("all", "first", "last"), 
-                       "all", "arbitrary")
-        featureGR <- TSS.ordered
-        end(featureGR) <- 
-            start(featureGR) <- 
-            switch(FeatureLocForDistance,
-                   TSS=ifelse(strand(featureGR)=="-", 
-                              end(featureGR), 
-                              start(featureGR)), 
-                   geneEnd=ifelse(strand(featureGR)=="-", 
-                                  start(featureGR), 
-                                  end(featureGR)),
-                   middle=round(rowMeans(cbind(start(featureGR), 
-                                               end(featureGR)))),
-                   start=start(featureGR),
-                   end=end(featureGR) 
-            )
-        myPeaksGR <- myPeakList
-        end(myPeaksGR) <-
-            start(myPeaksGR) <-
-            switch(PeakLocForDistance,
-                   middle=round(rowMeans(cbind(start(myPeaksGR),
-                                               end(myPeaksGR)))),
-                   start=start(myPeaksGR),
-                   end=end(myPeaksGR)
-            )
-        if(output=="nearestLocation"){
-            dist <- as.data.frame(nearest(myPeaksGR, featureGR, 
-                                          ignore.strand=ignore.strand, 
-                                          select=nsel))            
-            if(nrow(dist)==0) dist[1,] <- NA ##in case no match at all
-            if(nsel=="arbitrary") {
-                dist <- cbind(queryHits=seq_along(myPeakList), 
-                              subjectHits=dist)
-                colnames(dist) <- c("queryHits", "subjectHits")
-            }
-            dist$output <- rep("NearestLocation", nrow(dist))
-        }
-        if(output=="both"){
-            distN <- as.data.frame(nearest(myPeaksGR, featureGR,
-                                           ignore.strand=ignore.strand,
-                                           select=nsel))
-            if(nrow(distN)==0) distN[1,]<-NA
-            if(nsel=="arbitrary") {
-                distN <- cbind(queryHits=seq_along(myPeakList), 
-                               subjectHits=distN)
-                colnames(distN) <- c("queryHits", "subjectHits")
-            }
-            distO <- as.data.frame(findOverlaps(myPeakList, TSS.ordered,
-                                                maxgap=maxgap,
-                                                ignore.strand=ignore.strand,
-                                                select=select))
-            if(nrow(distO)==0) distO[1,]<-NA
-            if(ncol(distO)==1){
-                distO <- cbind(queryHits=seq_along(myPeakList), 
-                               subjectHits=distO)
-                colnames(distO) <- c("queryHits", "subjectHits")
-            }
-            distN$output <- rep("NearestLocation", nrow(distN))
-            distN <- distN[!is.na(distN$subjectHits),]
-            distO$output <- rep("Overlapping", nrow(distO))
-            distO <- distO[!is.na(distO$subjectHits),]
-            dist <- rbind(distN, distO)
-            dist <- dist[!duplicated(dist[,c("queryHits", "subjectHits")]),
-                         ,drop=FALSE]
-            dist <- dist[order(dist$queryHits, dist$subjectHits),,drop=FALSE]
-        }
-        if(output=="overlapping"){
-            dist <- as.data.frame(findOverlaps(myPeakList, TSS.ordered,
-                                               maxgap=maxgap,
-                                               ignore.strand=ignore.strand,
-                                               select=select))
-            if(nrow(dist)==0) dist[1,] <- NA
-            if(ncol(dist)==1){
-                dist <- cbind(queryHits=seq_along(myPeakList), subjectHits=dist)
-                colnames(dist) <- c("queryHits", "subjectHits")
-            }
-            dist$output <- rep("Overlapping", nrow(dist))
-        }
-        if(output=="shortestDistance"){
-            dist <- as.data.frame(nearest(myPeakList, TSS.ordered,
-                                          ignore.strand=ignore.strand,
-                                          select=nsel))
-            if(nrow(dist)==0) dist[1,] <- NA ##in case no match at all
-            if(nsel=="arbitrary") {
-                dist <- cbind(queryHits=seq_along(myPeakList), subjectHits=dist)
-                colnames(dist) <- c("queryHits", "subjectHits")
-            }
-            dist$output <- rep("shortestDistance", nrow(dist))
-        }
-        if(output=="upstream&inside"){
-            #upstream
-            featureGR <- TSS.ordered
-            start <- ifelse(strand(featureGR)=="-", 
-                            start(featureGR), 
-                            start(featureGR)-max(maxgap, 1))
-            width <- width(featureGR) + max(maxgap, 1)
-            start(featureGR) <- start
-            width(featureGR) <- width
-            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
-                                                ignore.strand=ignore.strand,
-                                                select=select,
-                                                type="any"))
-            dist$output <- rep("Upstream&Inside", nrow(dist))
-        }
-        if(output=="upstream"){
-            #upstream
-            featureGR <- TSS.ordered
-            start <- ifelse(strand(featureGR)=="-", 
-                            end(featureGR)+1, 
-                            start(featureGR)-max(maxgap, 1))
-            width <- max(maxgap, 1)
-            start(featureGR) <- start
-            width(featureGR) <- width
-            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
-                                               ignore.strand=ignore.strand,
-                                               select=select,
-                                               type="any"))
-            dist$output <- rep("Upstream", nrow(dist))
-        }
-        if(output=="inside&downstream"){
-            #downstream
-            featureGR <- TSS.ordered
-            start <- ifelse(strand(featureGR)=="-", 
-                            start(featureGR)-max(maxgap, 1), 
-                            start(featureGR))
-            width <- width(featureGR) + max(maxgap, 1)
-            start(featureGR) <- start
-            width(featureGR) <- width
-            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
-                                                ignore.strand=ignore.strand,
-                                                select=select,
-                                                type="any"))
-            dist$output <- rep("Inside&Downstream", nrow(dist))
-        }
-        if(output=="downstream"){
-            #downstream
-            featureGR <- TSS.ordered
-            start <- ifelse(strand(featureGR)=="-", 
-                            start(featureGR)-max(maxgap, 1), 
-                            end(featureGR)+1)
-            width <- max(maxgap, 1)
-            start(featureGR) <- start
-            width(featureGR) <- width
-            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
-                                               ignore.strand=ignore.strand,
-                                               select=select,
-                                               type="any"))
-            dist$output <- rep("Downstream", nrow(dist))
-        }
-        if(output=="upstreamORdownstream"){
-            featureGR <- TSS.ordered
-            start <- ifelse(strand(featureGR)=="-", 
-                            end(featureGR)+1, 
-                            start(featureGR)-max(maxgap, 1))
-            width <- max(maxgap, 1)
-            start(featureGR) <- start
-            width(featureGR) <- width
-            dist1 <- as.data.frame(findOverlaps(myPeakList, featureGR,
-                                               ignore.strand=ignore.strand,
-                                               select=select,
-                                               type="any"))
-            dist1$output <- rep("Upstream", nrow(dist1))
-            featureGR <- TSS.ordered
-            start <- ifelse(strand(featureGR)=="-", 
-                            start(featureGR)-max(maxgap, 1), 
-                            end(featureGR)+1)
-            width <- max(maxgap, 1)
-            start(featureGR) <- start
-            width(featureGR) <- width
-            dist2 <- as.data.frame(findOverlaps(myPeakList, featureGR,
-                                               ignore.strand=ignore.strand,
-                                               select=select,
-                                               type="any"))
-            dist2$output <- rep("Downstream", nrow(dist2))
-            dist <- rbind(dist1, dist2)
-        }
-        if(output=="inside"){
-            dist <- as.data.frame(findOverlaps(myPeakList, TSS.ordered,
-                                               ignore.strand=ignore.strand,
-                                               select=select,
-                                               type="within"))
-            dist$output <- rep("inside", nrow(dist))
-        }
-        if(output=="upstream2downstream"){
-            featureGR <- TSS.ordered
-            start(featureGR) <- 
-                apply(cbind(start(featureGR) - maxgap, 1), 1, max)
-            end(featureGR) <- end(featureGR) + maxgap
-            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
-                                               ignore.strand=ignore.strand,
-                                               select=select,
-                                               type="any"))
-            dist$output <- rep("upstream2downstream", nrow(dist))
-        }
-        ##  nearest is NOT filtered by maxgap, is this should be changed?
-        ##        dist <- dist[!is.na(dist$subjectHits), ]
-        ##        distance <- distance(myPeakList[dist$queryHits],
-        ##                             TSS.ordered[dist$subjectHits],
-        ##                             ignore.strand=ignore.strand)
-        ##        dist <- dist[abs(distance) <= maxgap, ]
-        if(output=="nearestBiDirectionalPromoters" && length(bindingRegion)<=1){
-          stop("If output is nearestBiDirectionalPromoters,",
-               "please set bindingRegion. See ?annoPeaks for details.")
-        }
-        myPeakList.Hit <- 
+        dist <- .findOverlapsByOutput(myPeakList[[chr]], anno_by_chr[[chr]],
+                                      myPeaksGR, featureGR,
+                                      output, maxgap,
+                                      ignore.strand,
+                                      select, nsel)
+        myPeakList.Hit <-
             myPeakList[dist$queryHits[!is.na(dist$subjectHits)]]
-        myPeakList.NA <- 
+        myPeakList.NA <-
             myPeakList[!names(myPeakList) %in% names(myPeakList.Hit)]
-        subjectHits <- 
+        subjectHits <-
             TSS.ordered[dist$subjectHits[!is.na(dist$subjectHits)]]
-        mcols(subjectHits)$output <- 
-            dist[!is.na(dist$subjectHits),"output"]
-        #    myPeakList.Hit$distanceToNearest <- 
-        #    dist$distance[!is.na(dist$subjectHits)]
+        mcols(subjectHits)$output <-
+            dist[!is.na(dist$subjectHits), "output"]
         
-        ###STEP2 get distance for each peak and nearest annotation by 
-        ## distance(x, y). the distance is calculated by
-        ##        PeakLocForDistance=c("start","middle","end"),
-        ##        FeatureLocForDistance=c("TSS","middle","start",
-        ##                              "end", "geneEnd")
+        ### STEP2: Get distance for each peak and nearest annotation
+        ### Distance is calculated by:
+        ### PeakLocForDistance = c("start", "middle", "end")
+        ### FeatureLocForDistance = c("TSS", "middle", "start", "end", "geneEnd")
         FeatureLoc <-
             switch(FeatureLocForDistance,
-                   middle=as.integer(round(rowMeans(cbind(start(subjectHits), 
-                                                          end(subjectHits))))),
-                   start=start(subjectHits),
-                   end=end(subjectHits),
-                   geneEnd=as.integer(ifelse(strand(subjectHits)=="-", 
-                                             start(subjectHits), 
-                                             end(subjectHits))),
-                   TSS=as.integer(ifelse(strand(subjectHits)=="-", 
-                                         end(subjectHits), 
-                                         start(subjectHits))))
+                middle = as.integer(round(rowMeans(cbind(start(subjectHits),
+                                                            end(subjectHits))))),
+                start = start(subjectHits),
+                end = end(subjectHits),
+                geneEnd = as.integer(ifelse(strand(subjectHits) == "-",
+                                            start(subjectHits),
+                                            end(subjectHits))),
+                TSS = as.integer(ifelse(strand(subjectHits) == "-",
+                                        end(subjectHits),
+                                        start(subjectHits))))
         
-        PeakLoc <- 
+        PeakLoc <-
             switch(PeakLocForDistance,
-                   start=start(myPeakList.Hit),
-                   end=end(myPeakList.Hit),
-                   middle=as.integer(round(rowMeans(
-                       cbind(start(myPeakList.Hit), end(myPeakList.Hit))))))
+                start = start(myPeakList.Hit),
+                end = end(myPeakList.Hit),
+                middle = as.integer(round(rowMeans(
+                    cbind(start(myPeakList.Hit), end(myPeakList.Hit))))))
         
-        distancetoFeature <- as.numeric(ifelse(strand(subjectHits)=="-", 
-                                               FeatureLoc - PeakLoc, 
-                                               PeakLoc - FeatureLoc))
+        distancetoFeature <- as.numeric(ifelse(strand(subjectHits) == "-",
+                                                FeatureLoc - PeakLoc,
+                                                PeakLoc - FeatureLoc))
         
-        ###STEP3 relationship between query and subject:
-        ###   "inside", "overlapEnd", "overlapStart", 
-        ###    "includeFeature", "upstream", "downstream"
+        ### STEP3: Relationship between query and subject:
+        ### "inside", "overlapEnd", "overlapStart",
+        ### "includeFeature", "upstream", "downstream"
         insideFeature <- getRelationship(myPeakList.Hit, subjectHits)
         myPeakList.Hit$peak <- names(myPeakList.Hit)
         myPeakList.Hit$feature <- names(subjectHits)
@@ -838,92 +857,403 @@ annotatePeakInBatch <-
         myPeakList.Hit$distancetoFeature <- distancetoFeature
         
         myPeakList.Hit$shortestDistance <- 
-            as.integer(insideFeature[,"shortestDistance"])
+            as.integer(insideFeature[, "shortestDistance"])
         
         myPeakList.Hit$fromOverlappingOrNearest <- subjectHits$output
-        ##save oid for select == "first" or "last" filter
+        ## Save oid for select == "first" or "last" filter
         myPeakList.Hit$oid <- insideFeature[, "ss"]
-        ###combind data of NA with Hits
-        if(length(myPeakList.NA)>0){
+        
+        ### Combine data of NA with Hits
+        if (length(myPeakList.NA) > 0) {
             myPeakList.NA$peak <- names(myPeakList.NA)
-            for(ncol in c("feature",
-                          "start_position",
-                          "end_position",
-                          "feature_strand",
-                          "insideFeature",
-                          "distancetoFeature",
-                          "shortestDistance",
-                          "fromOverlappingOrNearest",
-                          "oid")){
+            for (ncol in c("feature",
+                        "start_position",
+                        "end_position",
+                        "feature_strand",
+                        "insideFeature",
+                        "distancetoFeature",
+                        "shortestDistance",
+                        "fromOverlappingOrNearest",
+                        "oid")) {
                 mcols(myPeakList.NA)[, ncol] <- NA
             }
-            ## in case duplicated colnames
+            ## In case duplicated colnames
             colnames(mcols(myPeakList.NA)) <- colnames(mcols(myPeakList.Hit))
             myPeakList <- c(myPeakList.Hit, myPeakList.NA)
-        }else{
+        } else {
             myPeakList <- myPeakList.Hit
         }
-        ###output the results
-        ##select=c("all", "first", "last", "arbitrary"))
-        ##output = c("nearest", "overlapping", "both")
-        ##if select %in% first or last, must filter the duplicate annotation
-        ##if output="both", must filter the duplicate annotation
-        ##if input is GRanges, output is GRanges
-        ###the order of output should be same as input
-        if(select=="first"){
-            myPeakList <- 
-                myPeakList[order(names(myPeakList), abs(myPeakList$oid))]
-            myPeakList <- 
-                myPeakList[!duplicated(names(myPeakList))]
+        
+        ### Output the results
+        ## select = c("all", "first", "last", "arbitrary")
+        ## output = c("nearest", "overlapping", "both")
+        ## if select %in% first or last, must filter the duplicate annotation
+        ## if output = "both", must filter the duplicate annotation
+        ## if input is GRanges, output is GRanges
+        ### The order of output should be same as input
+        if (select == "first") {
+            myPeakList <- myPeakList[order(names(myPeakList), abs(myPeakList$oid))]
+            myPeakList <- myPeakList[!duplicated(names(myPeakList))]
         }
-        if(select=="last"){
-            myPeakList <- 
-                myPeakList[order(names(myPeakList), -abs(myPeakList$oid))]
-            myPeakList <- 
-                myPeakList[!duplicated(names(myPeakList))]
+        if (select == "last") {
+            myPeakList <- myPeakList[order(names(myPeakList), -abs(myPeakList$oid))]
+            myPeakList <- myPeakList[!duplicated(names(myPeakList))]
         }
-        ##remove column oid
+        
+        ## Remove column oid
         myPeakList$oid <- NULL
-        ##re-order myPeakList as the original order
+        
+        ## Re-order myPeakList as the original order
         oid <- seq_along(savedNames)
         names(oid) <- savedNames
         oid <- oid[names(myPeakList)]
-        if(!any(is.na(oid))){
+        if (!any(is.na(oid))) {
             myPeakList <- myPeakList[order(oid)]
         }
         
-
-        if(output=="nearestLocation"){
-            ## remove duplicate annotation, just keep the nearest one
-            removeDuplicates <- function(gr){
-                dup <- duplicated(gr$peak)
-                if(any(dup)){
-                    gr$oid <- seq_along(gr)
-                    dup <- gr[dup]
-                    gr.dup <- gr[gr$peak %in% dup$peak] 
-                    ## bugs peak name must be different.
-                    gr.NOTdup <- gr[!gr$peak %in% dup$peak]
-                    gr.dup <- split(gr.dup, gr.dup$peak)
-                    gr.dup <- lapply(gr.dup, function(.ele){
-                        .ele[.ele$shortestDistance == 
-                                 min(.ele$shortestDistance)]
-                    })
-                    gr.dup <- unlist(GRangesList(gr.dup))
-                    gr <- c(gr.dup, gr.NOTdup)
-                    gr <- gr[order(gr$oid)]
-                    gr$oid <- NULL  
-                }
-                gr
-            }
-            myPeakList <- removeDuplicates(myPeakList)
+        if (output == "nearestLocation") {
+            myPeakList <- .removeDuplicatesForNearestLocation(myPeakList)
         }
-
         
-        names(myPeakList) <- 
-            make.names(paste(myPeakList$peak, myPeakList$feature))
-
-        ##myPeakList
+        names(myPeakList) <- make.names(paste(myPeakList$peak, myPeakList$feature))
         return(myPeakList)
+    })
+    return(unlist(GRangesList(results)))
+}
+
+## Helper functions for annotatePeakInBatch
+
+.prepareAnnotationData <- function(mart, AnnotationData, featureType) {
+    if (missing(AnnotationData) || length(AnnotationData) == 0) {
+        if (missing(mart)) {
+            stop("Error in querying biomart database. ",
+                 "No valid mart object is passed in! ",
+                 "Suggest call getAnnotation before calling ",
+                 "annotatePeakInBatch", call. = FALSE)
+        }
+        if (!inherits(mart, "Mart")) {
+            if (inherits(mart, "GRanges")) {
+                warning("AnnotationData is missing, and a GRanges is passed ",
+                        "to mart parameter. Trying to annotate peaks by ",
+                        "the GRanges you input.")
+                AnnotationData <- mart
+            } else {
+                stop("Error in querying biomart database. ",
+                     "No valid mart object is passed in! ",
+                     "Suggest call getAnnotation before calling ",
+                     "annotatePeakInBatch", call. = FALSE)
+            }
+        } else {
+            AnnotationData <- getAnnotation(mart, featureType = featureType)
+            message("Done querying biomart database, start annotating .... ",
+                    "Better way would be calling getAnnotation before ",
+                    "calling annotatePeakInBatch")
+        }
     }
+    if (!inherits(AnnotationData, c("GRanges", "annoGR"))) {
+        stop("AnnotationData needs to be GRanges or annoGR object")
+    }
+    if (!length(names(AnnotationData)) || any(is.na(names(AnnotationData)))) {
+        names(AnnotationData) <- paste0("ann", seq_along(AnnotationData))
+    }
+    if (inherits(AnnotationData, "annoGR")) {
+        AnnotationData <- as(AnnotationData, "GRanges")
+    }
+    AnnotationData
+}
+
+.prepareGRangesNames <- function(gr) {
+    if (is.null(names(gr))) {
+        names(gr) <- formatC(seq_along(gr),
+                            width = nchar(length(gr)),
+                            flag = "0")
+    }
+    if (any(duplicated(names(gr)))) {
+        warning("Found duplicated names. Changing the names ...")
+        names(gr) <- formatC(seq_along(gr),
+                            width = nchar(length(gr)),
+                            flag = "0")
+    }
+    gr
+}
+
+.prepareFeatureLocations <- function(featureGR, FeatureLocForDistance) {
+    end(featureGR) <- start(featureGR) <- 
+        switch(FeatureLocForDistance,
+               TSS = ifelse(strand(featureGR) == "-", 
+                           end(featureGR), 
+                           start(featureGR)), 
+               geneEnd = ifelse(strand(featureGR) == "-", 
+                               start(featureGR), 
+                               end(featureGR)),
+               middle = round(rowMeans(cbind(start(featureGR), 
+                                            end(featureGR)))),
+               start = start(featureGR),
+               end = end(featureGR))
+    featureGR
+}
+
+.preparePeakLocations <- function(myPeaksGR, PeakLocForDistance) {
+    end(myPeaksGR) <- start(myPeaksGR) <- 
+        switch(PeakLocForDistance,
+               middle = round(rowMeans(cbind(start(myPeaksGR),
+                                            end(myPeaksGR)))),
+               start = start(myPeaksGR),
+               end = end(myPeaksGR))
+    myPeaksGR
+}
+
+.findOverlapsByOutput <- function(myPeakList, TSS.ordered, myPeaksGR, 
+                                  featureGR, output, maxgap, ignore.strand, 
+                                  select, nsel) {
+    dist <- switch(output,
+        nearestLocation = {
+            dist <- as.data.frame(nearest(myPeaksGR, featureGR, 
+                                         ignore.strand = ignore.strand, 
+                                         select = nsel))
+            if (nrow(dist) == 0) dist[1,] <- NA
+            if (nsel == "arbitrary") {
+                dist <- cbind(queryHits = seq_along(myPeakList), 
+                             subjectHits = dist)
+                colnames(dist) <- c("queryHits", "subjectHits")
+            }
+            dist$output <- rep("NearestLocation", nrow(dist))
+            dist
+        },
+        both = {
+            distN <- as.data.frame(nearest(myPeaksGR, featureGR,
+                                           ignore.strand = ignore.strand,
+                                           select = nsel))
+            if (nrow(distN) == 0) distN[1,] <- NA
+            if (nsel == "arbitrary") {
+                distN <- cbind(queryHits = seq_along(myPeakList), 
+                              subjectHits = distN)
+                colnames(distN) <- c("queryHits", "subjectHits")
+            }
+            distO <- as.data.frame(findOverlaps(myPeakList, TSS.ordered,
+                                             maxgap = maxgap,
+                                             ignore.strand = ignore.strand,
+                                             select = select))
+            if (nrow(distO) == 0) distO[1,] <- NA
+            if (ncol(distO) == 1) {
+                distO <- cbind(queryHits = seq_along(myPeakList), 
+                              subjectHits = distO)
+                colnames(distO) <- c("queryHits", "subjectHits")
+            }
+            distN$output <- rep("NearestLocation", nrow(distN))
+            distN <- distN[!is.na(distN$subjectHits),]
+            distO$output <- rep("Overlapping", nrow(distO))
+            distO <- distO[!is.na(distO$subjectHits),]
+            dist <- rbind(distN, distO)
+            dist <- dist[!duplicated(dist[,c("queryHits", "subjectHits")]),
+                        , drop = FALSE]
+            dist <- dist[order(dist$queryHits, dist$subjectHits),, drop = FALSE]
+            dist
+        },
+        overlapping = {
+            dist <- as.data.frame(findOverlaps(myPeakList, TSS.ordered,
+                                               maxgap = maxgap,
+                                               ignore.strand = ignore.strand,
+                                               select = select))
+            if (nrow(dist) == 0) dist[1,] <- NA
+            if (ncol(dist) == 1) {
+                dist <- cbind(queryHits = seq_along(myPeakList), 
+                             subjectHits = dist)
+                colnames(dist) <- c("queryHits", "subjectHits")
+            }
+            dist$output <- rep("Overlapping", nrow(dist))
+            dist
+        },
+        shortestDistance = {
+            dist <- as.data.frame(nearest(myPeakList, TSS.ordered,
+                                          ignore.strand = ignore.strand,
+                                          select = nsel))
+            if (nrow(dist) == 0) dist[1,] <- NA
+            if (nsel == "arbitrary") {
+                dist <- cbind(queryHits = seq_along(myPeakList), 
+                             subjectHits = dist)
+                colnames(dist) <- c("queryHits", "subjectHits")
+            }
+            dist$output <- rep("shortestDistance", nrow(dist))
+            dist
+        },
+        inside = {
+            dist <- as.data.frame(findOverlaps(myPeakList, TSS.ordered,
+                                              ignore.strand = ignore.strand,
+                                              select = select,
+                                              type = "within"))
+            dist$output <- rep("inside", nrow(dist))
+            dist
+        },
+
+        {
+            .findDirectionalOverlaps(myPeakList, TSS.ordered, output, 
+                                     maxgap, ignore.strand, select)
+        }
+    )
+    dist
+}
+
+.findDirectionalOverlaps <- function(myPeakList, TSS.ordered, output, 
+                                     maxgap, ignore.strand, select) {
+    featureGR <- TSS.ordered
+    switch(output,
+        "upstream&inside" = {
+            start <- ifelse(strand(featureGR) == "-", 
+                            start(featureGR), 
+                            start(featureGR) - max(maxgap, 1L))
+            width <- width(featureGR) + max(maxgap, 1L)
+            start(featureGR) <- start
+            width(featureGR) <- width
+            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
+                                               ignore.strand = ignore.strand,
+                                               select = select,
+                                               type = "any"))
+            dist$output <- rep("Upstream&Inside", nrow(dist))
+            dist
+        },
+        "upstream" = {
+            start <- ifelse(strand(featureGR) == "-", 
+                            end(featureGR) + 1L, 
+                            start(featureGR) - max(maxgap, 1L))
+            width <- max(maxgap, 1L)
+            start(featureGR) <- start
+            width(featureGR) <- width
+            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
+                                               ignore.strand = ignore.strand,
+                                               select = select,
+                                               type = "any"))
+            dist$output <- rep("Upstream", nrow(dist))
+            dist
+        },
+        "inside&downstream" = {
+            start <- ifelse(strand(featureGR) == "-", 
+                            start(featureGR) - max(maxgap, 1L), 
+                            start(featureGR))
+            width <- width(featureGR) + max(maxgap, 1L)
+            start(featureGR) <- start
+            width(featureGR) <- width
+            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
+                                               ignore.strand = ignore.strand,
+                                               select = select,
+                                               type = "any"))
+            dist$output <- rep("Inside&Downstream", nrow(dist))
+            dist
+        },
+        "downstream" = {
+            start <- ifelse(strand(featureGR) == "-", 
+                            start(featureGR) - max(maxgap, 1L), 
+                            end(featureGR) + 1L)
+            width <- max(maxgap, 1L)
+            start(featureGR) <- start
+            width(featureGR) <- width
+            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
+                                               ignore.strand = ignore.strand,
+                                               select = select,
+                                               type = "any"))
+            dist$output <- rep("Downstream", nrow(dist))
+            dist
+        },
+        "upstreamORdownstream" = {
+            featureGR1 <- TSS.ordered
+            start <- ifelse(strand(featureGR1) == "-", 
+                            end(featureGR1) + 1L, 
+                            start(featureGR1) - max(maxgap, 1L))
+            width <- max(maxgap, 1L)
+            start(featureGR1) <- start
+            width(featureGR1) <- width
+            dist1 <- as.data.frame(findOverlaps(myPeakList, featureGR1,
+                                                ignore.strand = ignore.strand,
+                                                select = select,
+                                                type = "any"))
+            dist1$output <- rep("Upstream", nrow(dist1))
+            featureGR2 <- TSS.ordered
+            start <- ifelse(strand(featureGR2) == "-", 
+                            start(featureGR2) - max(maxgap, 1L), 
+                            end(featureGR2) + 1L)
+            width <- max(maxgap, 1L)
+            start(featureGR2) <- start
+            width(featureGR2) <- width
+            dist2 <- as.data.frame(findOverlaps(myPeakList, featureGR2,
+                                                ignore.strand = ignore.strand,
+                                                select = select,
+                                                type = "any"))
+            dist2$output <- rep("Downstream", nrow(dist2))
+            rbind(dist1, dist2)
+        },
+        "upstream2downstream" = {
+            featureGR <- TSS.ordered
+            start(featureGR) <- pmax(start(featureGR) - maxgap, 1L)
+            end(featureGR) <- end(featureGR) + maxgap
+            dist <- as.data.frame(findOverlaps(myPeakList, featureGR,
+                                               ignore.strand = ignore.strand,
+                                               select = select,
+                                               type = "any"))
+            dist$output <- rep("upstream2downstream", nrow(dist))
+            dist
+        }
+    )
+}
+
+.calculateDistances <- function(myPeakList.Hit, subjectHits, 
+                                PeakLocForDistance, FeatureLocForDistance) {
+    FeatureLoc <- switch(FeatureLocForDistance,
+        middle = as.integer(round(rowMeans(cbind(start(subjectHits), 
+                                                 end(subjectHits))))),
+        start = start(subjectHits),
+        end = end(subjectHits),
+        geneEnd = as.integer(ifelse(strand(subjectHits) == "-", 
+                                   start(subjectHits), 
+                                   end(subjectHits))),
+        TSS = as.integer(ifelse(strand(subjectHits) == "-", 
+                                end(subjectHits), 
+                                start(subjectHits))))
+    
+    PeakLoc <- switch(PeakLocForDistance,
+        start = start(myPeakList.Hit),
+        end = end(myPeakList.Hit),
+        middle = as.integer(round(rowMeans(
+            cbind(start(myPeakList.Hit), end(myPeakList.Hit))))))
+    
+    distancetoFeature <- as.numeric(ifelse(strand(subjectHits) == "-", 
+                                            FeatureLoc - PeakLoc, 
+                                            PeakLoc - FeatureLoc))
+    distancetoFeature
+}
+
+.addAnnotationMetadata <- function(myPeakList.Hit, subjectHits, 
+                                   distancetoFeature, insideFeature) {
+    myPeakList.Hit$peak <- names(myPeakList.Hit)
+    myPeakList.Hit$feature <- names(subjectHits)
+    myPeakList.Hit$start_position <- start(subjectHits)
+    myPeakList.Hit$end_position <- end(subjectHits)
+    myPeakList.Hit$feature_strand <- as.character(strand(subjectHits))
+    myPeakList.Hit$insideFeature <- insideFeature[, "insideFeature"]
+    myPeakList.Hit$distancetoFeature <- distancetoFeature
+    myPeakList.Hit$shortestDistance <- 
+        as.integer(insideFeature[, "shortestDistance"])
+    myPeakList.Hit$fromOverlappingOrNearest <- subjectHits$output
+    myPeakList.Hit$oid <- insideFeature[, "ss"]
+    myPeakList.Hit
+}
+
+.removeDuplicatesForNearestLocation <- function(gr) {
+    dup <- duplicated(gr$peak)
+    if (any(dup)) {
+        gr$oid <- seq_along(gr)
+        dup <- gr[dup]
+        gr.dup <- gr[gr$peak %in% dup$peak]
+        gr.NOTdup <- gr[!gr$peak %in% dup$peak]
+        gr.dup <- split(gr.dup, gr.dup$peak)
+        gr.dup <- lapply(gr.dup, function(.ele) {
+            .ele[.ele$shortestDistance == min(.ele$shortestDistance)]
+        })
+        gr.dup <- unlist(GRangesList(gr.dup))
+        gr <- c(gr.dup, gr.NOTdup)
+        gr <- gr[order(gr$oid)]
+        gr$oid <- NULL
+    }
+    gr
+}
 
 globalVariables(c("fromOverlappingOrNearest", "peak"))

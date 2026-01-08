@@ -23,11 +23,11 @@
 #' transcript for plus-strand genes and the 3' end for minus-strand genes.
 #' 
 #' \strong{Genome assembly:} RGSC3.4 (also known as rn4) - **Legacy assembly**  
-#' \strong{Source:} Ensembl via biomaRt  
+#' \strong{Source:} Ensembl via \code{\link{biomaRt}}  
 #' \strong{Use case:} Annotation of legacy datasets aligned to rn4
 #' 
 #' \strong{Data generation:}
-#' The dataset was obtained using:
+#' The dataset was obtained from Ensembl using:
 #' \preformatted{
 #' mart <- useMart(
 #'     biomart = "ensembl",

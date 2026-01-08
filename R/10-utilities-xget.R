@@ -1,30 +1,189 @@
-#' Return the value from a Bimap objects
+#' Extract values from AnnotationDbi Bimap objects
 #' 
-#' Search by name for an Bimap object.
+#' @description 
+#' Searches and extracts values from AnnotationDbi Bimap objects (e.g., gene ID
+#' mappings, GO terms, gene symbols) with options to handle multiple matches per
+#' query. This is a convenience wrapper around \code{\link[AnnotationDbi]{mget}}
+#' that provides flexible handling of one-to-many mappings.
 #' 
+#' This function is particularly useful when working with AnnotationDbi organism
+#' packages (e.g., \code{org.Hs.eg.db}) where a single key may map to multiple
+#' values (e.g., one Entrez ID may have multiple gene symbols or GO terms).
 #' 
-#' @param x,envir,mode,ifnotfound,inherits see
-#' \link[AnnotationDbi:Bimap-envirAPI]{mget}
-#' @param output return the all or first item for each query
-#' @return a character vector
+#' @param x A character vector of keys to look up in the Bimap object. These
+#'        are the input identifiers (e.g., Entrez IDs, Ensembl IDs) for which
+#'        you want to retrieve corresponding values.
+#' @param envir A Bimap object from an AnnotationDbi package. Common examples
+#'        include:
+#'        \itemize{
+#'          \item \code{org.Hs.egSYMBOL}: Maps Entrez IDs to gene symbols
+#'          \item \code{org.Hs.egENSEMBL}: Maps Entrez IDs to Ensembl IDs
+#'          \item \code{org.Hs.egGO}: Maps Entrez IDs to GO terms
+#'          \item \code{org.Hs.egGENENAME}: Maps Entrez IDs to gene names
+#'          \item Similar objects for other organisms (mouse, rat, etc.)
+#'        }
+#'        The Bimap object must be loaded (via \code{library()} or
+#'        \code{require()}) before use.
+#' @param mode See \code{\link[AnnotationDbi]{mget}} for details. Typically not
+#'        needed for standard Bimap objects.
+#' @param ifnotfound The value to return when a key is not found in the Bimap.
+#'        Default is \code{NA}. Can be any value, but typically \code{NA} or
+#'        \code{NA_character_} for character outputs. See
+#'        \code{\link[AnnotationDbi]{mget}} for details.
+#' @param inherits See \code{\link[AnnotationDbi]{mget}} for details. Typically
+#'        not needed for standard Bimap objects.
+#' @param output A character string specifying how to handle multiple matches
+#'        for each query. Must be one of:
+#'        \itemize{
+#'          \item \code{"all"} (default): Returns all matches for each key,
+#'                separated by semicolons. For example, if a key maps to
+#'                \code{c("A", "B", "C")}, returns \code{"A;B;C"}.
+#'          \item \code{"first"}: Returns only the first match for each key.
+#'                If a key maps to \code{c("A", "B", "C")}, returns \code{"A"}.
+#'                If a key has no matches, returns \code{NA_character_}.
+#'          \item \code{"last"}: Returns only the last match for each key. If
+#'                a key maps to \code{c("A", "B", "C")}, returns \code{"C"}.
+#'                If a key has no matches, returns \code{NA_character_}.
+#'        }
+#' 
+#' @return Returns a character vector of the same length as \code{x},
+#'        containing the extracted values according to the \code{output}
+#'        parameter. The return value:
+#'        \itemize{
+#'          \item Has the same order as the input \code{x}
+#'          \item Contains \code{NA} (or \code{ifnotfound} value) for keys not
+#'                found in the Bimap
+#'          \item For \code{output = "all"}: Contains semicolon-separated values
+#'                when multiple matches exist
+#'          \item For \code{output = "first"} or \code{"last"}: Contains single
+#'                values (first or last match, or NA if no matches)
+#'        }
+#' 
+#' @details
+#' 
+#' \strong{How the function works:}
+#' \enumerate{
+#'   \item Calls \code{\link[AnnotationDbi]{mget}} to retrieve values for all
+#'         keys in \code{x}
+#'   \item For each key, processes the returned values based on \code{output}:
+#'         \itemize{
+#'           \item \code{"all"}: Concatenates all values with semicolons
+#'           \item \code{"first"}: Takes the first element (or NA if empty)
+#'           \item \code{"last"}: Takes the last element (or NA if empty)
+#'         }
+#'   \item Returns a character vector with processed values
+#' }
+#' 
+#' \strong{Multiple matches:}
+#' Many AnnotationDbi mappings are one-to-many:
+#' \itemize{
+#'   \item One Entrez ID may have multiple gene symbols (aliases)
+#'   \item One Entrez ID may have multiple GO terms
+#'   \item One gene symbol may map to multiple Entrez IDs (gene families)
+#' }
+#' The \code{output} parameter controls how these multiple matches are handled.
+#' 
+#' \strong{Use cases:}
+#' \itemize{
+#'   \item \code{output = "all"}: When you need all possible mappings (e.g., all
+#'         gene symbols for an ID, all GO terms)
+#'   \item \code{output = "first"}: When you only need one value and prefer the
+#'         first (often the primary/standard value)
+#'   \item \code{output = "last"}: When you only need one value and prefer the
+#'         last (sometimes the most recent or alternative value)
+#' }
+#' 
+#' \strong{Missing keys:}
+#' When a key is not found in the Bimap:
+#' \itemize{
+#'   \item \code{mget} returns the \code{ifnotfound} value (default: \code{NA})
+#'   \item For \code{output = "first"} or \code{"last"}, if the result is empty
+#'         (length 0), the function returns \code{NA_character_}
+#'   \item The output vector maintains the same length as input, with NA for
+#'         missing keys
+#' }
+#' 
+#' @note
+#' \itemize{
+#'   \item The Bimap object must be loaded before use (via \code{library()} or
+#'         \code{require()})
+#'   \item Keys are matched exactly (case-sensitive for most Bimap objects)
+#'   \item The function uses \code{vapply} to ensure consistent return types
+#'   \item For \code{output = "all"}, values are concatenated with semicolons
+#'         (no spaces)
+#'   \item Empty results (length 0) are converted to \code{NA_character_} for
+#'         \code{"first"} and \code{"last"} modes
+#' }
+#' 
+#' @seealso
+#' \itemize{
+#'   \item \code{\link[AnnotationDbi]{mget}} for the underlying lookup function
+#'   \item \code{\link[AnnotationDbi]{Bimap}} for Bimap object documentation
+#'   \item \code{\link{convert2EntrezID}} for converting between ID types
+#'   \item AnnotationDbi organism packages (e.g., \code{org.Hs.eg.db}) for
+#'         available Bimap objects
+#' }
+#' 
 #' @author Jianhong Ou
-#' @seealso See Also as \code{\link[base:get]{mget}},
-#' \code{\link[AnnotationDbi:Bimap-envirAPI]{mget}}
 #' @keywords misc
 #' @export
+#' @importFrom AnnotationDbi mget 
 #' @examples
 #' 
-#'     library(org.Hs.eg.db)
-#'     xget(as.character(1:10), org.Hs.egSYMBOL)
+#' # Example 1: Get gene symbols for Entrez IDs (first match only)
+#' library(org.Hs.eg.db)
+#' entrez_ids <- as.character(1:10)
+#' symbols <- xget(entrez_ids, org.Hs.egSYMBOL, output = "first")
+#' symbols
 #' 
-xget <- function(x, envir, mode, ifnotfound=NA, inherits, 
-                 output=c("all", "first", "last")){
+#' # Example 2: Get all gene symbols (if multiple symbols exist)
+#' all_symbols <- xget(entrez_ids, org.Hs.egSYMBOL, output = "all")
+#' all_symbols  # May contain semicolon-separated values
+#' 
+#' # Example 3: Get last match (alternative symbol)
+#' last_symbols <- xget(entrez_ids, org.Hs.egSYMBOL, output = "last")
+#' last_symbols
+#' 
+#' # Example 4: Get Ensembl IDs for Entrez IDs
+#' ensembl_ids <- xget(entrez_ids, org.Hs.egENSEMBL, output = "first")
+#' ensembl_ids
+#' 
+#' # Example 5: Get gene names (full names)
+#' gene_names <- xget(entrez_ids, org.Hs.egGENENAME, output = "first")
+#' gene_names
+#' 
+#' # Example 6: Handle missing keys
+#' mixed_ids <- c("1", "2", "999999", "10")  # 999999 doesn't exist
+#' symbols <- xget(mixed_ids, org.Hs.egSYMBOL, output = "first")
+#' symbols  # Contains NA for missing key
+#' 
+#' # Example 7: Get GO terms (often multiple per gene)
+#' go_terms <- xget(c("1", "2"), org.Hs.egGO, output = "all")
+#' go_terms  # May have many semicolon-separated GO terms
+#' 
+#' # Example 8: Custom ifnotfound value
+#' symbols <- xget(c("1", "999999"), org.Hs.egSYMBOL, 
+#'                output = "first", ifnotfound = "NOT_FOUND")
+#' symbols  # "NOT_FOUND" instead of NA for missing key
+xget <- function(x, envir, mode, ifnotfound = NA, inherits,
+                 output = c("all", "first", "last")) {
     output <- match.arg(output)
-    y <- mget(x=x, envir=envir, mode=mode, 
-              ifnotfound=ifnotfound, inherits=inherits)
-    switch(output, 
-           all=sapply(y, base::paste, collapse=";"),
-           first=sapply(y, `[`, 1),
-           last=sapply(y, function(.ele) .ele[length(.ele)])
+    
+    y <- mget(x = x,
+              envir = envir,
+              mode = mode,
+              ifnotfound = ifnotfound,
+              inherits = inherits)
+    
+    switch(output,
+           all = vapply(y, function(.ele) {
+               paste(.ele, collapse = ";")
+           }, FUN.VALUE = character(1)),
+           first = vapply(y, function(.ele) {
+               if (length(.ele) > 0L) .ele[1L] else NA_character_
+           }, FUN.VALUE = character(1)),
+           last = vapply(y, function(.ele) {
+               if (length(.ele) > 0L) .ele[length(.ele)] else NA_character_
+           }, FUN.VALUE = character(1))
     )
 }

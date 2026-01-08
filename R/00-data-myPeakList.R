@@ -19,8 +19,9 @@
 #' 
 #' @details
 #' This dataset contains 11,004 STAT1 binding peaks identified from ChIP-seq
-#' experiments. The data is provided in GRanges format, which is the standard
-#' format for genomic interval data in Bioconductor packages.
+#' experiments. The data is provided in the \code{\link[GenomicRanges]{GRanges}} 
+#' format, which is the standard format for genomic interval data in Bioconductor
+#' packages. 
 #' 
 #' @source
 #' Robertson G, Hirst M, Bainbridge M, Bilenky M, Zhao Y, et al. (2007)

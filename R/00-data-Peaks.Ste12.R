@@ -1,4 +1,4 @@
-#' Ste12-binding sites from biological replicate 1 in yeast
+#' Ste12-binding sites from biological replicate 1 in yeasts
 #' 
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Ste12 transcription
 #' factor binding sites identified from biological replicate 1 in yeast
@@ -60,7 +60,7 @@
 #' )
 "Peaks.Ste12.Replicate1"
 
-#' Ste12-binding sites from biological replicate 2 in yeast
+#' Ste12-binding sites from biological replicate 2 in yeasts
 #' 
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Ste12 transcription
 #' factor binding sites identified from biological replicate 2 in yeast
@@ -111,7 +111,7 @@
 #' length(Peaks.Ste12.Replicate2)
 "Peaks.Ste12.Replicate2"
 
-#' Ste12-binding sites from biological replicate 3 in yeast
+#' Ste12-binding sites from biological replicate 3 in yeasts
 #' 
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Ste12 transcription
 #' factor binding sites identified from biological replicate 3 in yeast

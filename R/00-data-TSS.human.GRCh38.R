@@ -2,10 +2,9 @@
 #' 
 #' A \code{\link[GenomicRanges]{GRanges}} object containing Transcription Start
 #' Site (TSS) coordinates for \emph{Homo sapiens} based on the GRCh38 (also
-#' known as hg38) genome assembly. This is the current reference genome
-#' assembly for human and is recommended for new analyses. The dataset was
-#' obtained from Ensembl via biomaRt and can be used directly with
-#' \code{\link{annotatePeakInBatch}} for peak annotation.
+#' known as hg38) genome assembly. This dataset was obtained from Ensembl via 
+#' \code{\link{biomaRt}} and can be used directly with\code{\link{annotatePeakInBatch}} for
+#' peak annotation.
 #' 
 #' @name TSS.human.GRCh38
 #' @docType data
@@ -24,8 +23,8 @@
 #' genome (GRCh38/hg38 assembly). The TSS is defined as the 5' end of the
 #' transcript for plus-strand genes and the 3' end for minus-strand genes.
 #' 
-#' \strong{Genome assembly:} GRCh38 (also known as hg38) - **Current reference**  
-#' \strong{Source:} Ensembl via biomaRt  
+#' \strong{Genome assembly:} GRCh38 (also known as hg38) 
+#' \strong{Source:} Ensembl via \code{\link{biomaRt}}  
 #' \strong{Use case:} Direct annotation of ChIP-seq peaks to nearest TSS
 #' 
 #' \strong{Data generation:}
@@ -37,12 +36,6 @@
 #' )
 #' TSS.human.GRCh38 <- getAnnotation(mart, featureType = "TSS")
 #' }
-#' 
-#' @note
-#' GRCh38 (hg38) is the current reference genome assembly for human. This
-#' dataset is recommended for new analyses. Ensure your peak coordinates are
-#' aligned to the same genome assembly (GRCh38/hg38).
-#' 
 #' @seealso
 #' \code{\link{TSS.human.GRCh37}}, \code{\link{TSS.human.NCBI36}},
 #' \code{\link{annotatePeakInBatch}}, \code{\link{getAnnotation}}

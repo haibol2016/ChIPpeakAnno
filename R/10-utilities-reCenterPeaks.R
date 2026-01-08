@@ -1,37 +1,73 @@
-#' re-center the peaks
+#' Re-center peaks to fixed width
 #' 
-#' Create a new list of peaks based on the peak centers of given list.
+#' Create a new set of peaks centered on the original peak centers with a
+#' specified fixed width. This is useful for standardizing peak sizes for
+#' downstream analysis or visualization.
 #' 
+#' @param peaks A \code{\link[GenomicRanges]{GRanges}} or \code{\link{annoGR}}
+#'        object containing peaks to be re-centered.
+#' @param width Integer. The width (in base pairs) of the re-centered peaks.
+#'        Default is \code{2000L}.
+#' @param ... Additional arguments (not currently used).
 #' 
-#' @param peaks An object of \link[GenomicRanges:GRanges-class]{GRanges} or
-#' \link{annoGR}.
-#' @param width The width of new peaks
-#' @param ... Not used.
-#' @return An object of GRanges.
+#' @return A \code{\link[GenomicRanges]{GRanges}} object with re-centered peaks
+#'         of the specified width. The new peaks are centered on the midpoint
+#'         of the original peaks.
+#' 
+#' @details
+#' This function:
+#' \enumerate{
+#'   \item Calculates the center of each peak: \code{start + floor(width/2)}
+#'   \item Creates new peaks centered on these positions with the specified width
+#'   \item Issues warnings if peaks extend beyond chromosome boundaries
+#' }
+#' 
+#' If sequence length information is available, the function checks for
+#' out-of-bound peaks and issues warnings.
+#' 
 #' @author Jianhong Ou
 #' @keywords misc
 #' @export
+#' @importFrom GenomeInfoDb seqlengths
+#' 
 #' @examples
+#' peaks <- GRanges("chr1", IRanges(100, 200))
 #' 
-#'     reCenterPeaks(GRanges("chr1", IRanges(1, 10)), width=2)
+#' # Re-center to 2 bp width
+#' reCenterPeaks(peaks, width = 2L)
 #' 
-reCenterPeaks <- function(peaks, width=2000L, ...){
-    stopifnot(inherits(peaks, c("annoGR", "GRanges")))
-    peaks.center <- start(peaks) + floor(width(peaks)/2)
-    peaks.recentered <- peaks
-    start(peaks.recentered) <- peaks.center - floor(width/2)
-    width(peaks.recentered) <- width
-    if(any(start(peaks.recentered)<1)){
-      warning("Some start position of the peaks are less than 1!")
+#' # Re-center to 2000 bp width (default)
+#' reCenterPeaks(peaks, width = 2000L)
+reCenterPeaks <- function(peaks, width = 2000L, ...) {
+    stopifnot(
+        inherits(peaks, c("annoGR", "GRanges")),
+        is.numeric(width),
+        length(width) == 1L,
+        width > 0L
+    )
+    
+    peaks_center <- start(peaks) + floor(width(peaks) / 2L)
+    peaks_recentered <- peaks
+    start(peaks_recentered) <- peaks_center - floor(width / 2L)
+    width(peaks_recentered) <- as.integer(width)
+    
+    if (any(start(peaks_recentered) < 1L, na.rm = TRUE)) {
+        warning("Some start positions of the peaks are less than 1!", 
+                call. = FALSE)
     }
-    seqLen <- seqlengths(peaks)
-    seqLen <- seqLen[!is.na(seqLen)]
-    if(length(seqLen)>0){
-      peaks.subset <- 
-        peaks.recentered[seqnames(peaks.recentered) %in% names(seqLen)]
-      if(any(end(peaks.subset)>seqLen[as.character(seqnames(peaks.subset))])){
-        warning("Some end position of the peaks are out of bound!")
-      }
+    
+    seq_len <- seqlengths(peaks)
+    seq_len <- seq_len[!is.na(seq_len)]
+    
+    if (length(seq_len) > 0L) {
+        peaks_subset <- 
+            peaks_recentered[seqnames(peaks_recentered) %in% names(seq_len)]
+        seqnames_char <- as.character(seqnames(peaks_subset))
+        if (any(end(peaks_subset) > seq_len[seqnames_char], na.rm = TRUE)) {
+            warning("Some end positions of the peaks are out of bound!", 
+                    call. = FALSE)
+        }
     }
-    peaks.recentered
+    
+    peaks_recentered
 }

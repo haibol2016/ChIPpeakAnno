@@ -19,13 +19,17 @@
 #' }
 #' 
 #' @details
+#' \strong{Important:} This dataset is provided for package examples and unit
+#' testing only. Users should generate their own TSS annotations to match their
+#' genome assembly using \code{\link{getAnnotation}} or EnsDb/TxDb packages.
+#' 
 #' This dataset contains TSS coordinates for all annotated genes in the human
 #' genome (GRCh37/hg19 assembly). The TSS is defined as the 5' end of the
 #' transcript for plus-strand genes and the 3' end for minus-strand genes.
 #' 
 #' \strong{Genome assembly:} GRCh37 (also known as hg19)  
 #' \strong{Source:} Ensembl via biomaRt  
-#' \strong{Use case:} Direct annotation of ChIP-seq peaks to nearest TSS
+#' \strong{Intended use:} Package examples and unit testing only
 #' 
 #' \strong{Data generation:}
 #' The dataset was obtained using:
@@ -40,9 +44,21 @@
 #' }
 #' 
 #' @note
+#' \strong{For users:} Do not use this dataset for your own peak annotation.
+#' Instead, generate annotations matching your genome assembly:
+#' \preformatted{
+#' # Recommended approach:
+#' library(biomaRt)
+#' mart <- useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+#' TSS <- getAnnotation(mart, featureType = "TSS")
+#' 
+#' # Or use EnsDb packages:
+#' library(EnsDb.Hsapiens.v86)
+#' annoData <- annoGR(EnsDb.Hsapiens.v86)
+#' }
+#' 
 #' GRCh37 (hg19) is a legacy genome assembly. For new analyses, consider using
-#' \code{\link{TSS.human.GRCh38}} which is based on the current reference
-#' assembly (GRCh38/hg38).
+#' GRCh38 (hg38) and generate annotations accordingly.
 #' 
 #' @seealso
 #' \code{\link{TSS.human.GRCh38}}, \code{\link{TSS.human.NCBI36}},
