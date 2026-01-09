@@ -291,7 +291,7 @@
 #'         \code{bindingRegion = c(-5000, 3000)}: Creates promoter regions from 
 #'         5kb upstream to 3kb downstream of TSS using \code{promoters()} function.
 #' }
-#' @export
+#' 
 #' @importFrom GenomeInfoDb seqlevelsStyle seqlengths
 #' @importFrom BiocGenerics strand start end width pos
 #' @importFrom S4Vectors queryHits subjectHits
@@ -344,36 +344,6 @@
 #'                              bindingRegion = c(-5000, 3000))
 #' }
 #' 
-## Helper function to expand GRanges by binding region
-## Expands ranges by b[1] upstream and b[2] downstream, strand-aware
-.expandGRangesByBindingRegion <- function(gr, bindingRegion) {
-    str_pos <- as.character(strand(gr)) != "-"
-    # For positive strand: extend upstream (subtract) and downstream (add)
-    # For negative strand: extend upstream (add) and downstream (subtract)
-    s1 <- ifelse(
-        str_pos,
-        start(gr) + bindingRegion[1],
-        start(gr) - bindingRegion[2]
-    )
-    s1[s1 < 1L] <- 1L
-    start(gr) <- s1
-    e1 <- ifelse(
-        str_pos,
-        end(gr) + bindingRegion[2],
-        end(gr) - bindingRegion[1]
-    )
-    # Bound by chromosome lengths
-    seql <- seqlengths(gr)
-    if (length(seql) > 0L) {
-        e1_seql <- seql[as.character(seqnames(gr))]
-        e1.idx <- which(e1 > e1_seql)
-        if (length(e1.idx) > 0L) {
-            e1[e1.idx] <- e1_seql[e1.idx]
-        }
-    }
-    end(gr) <- e1
-    gr
-}
 
 annoPeaks <- function(peaks,
                       annoData,
@@ -383,15 +353,16 @@ annoPeaks <- function(peaks,
                       ignore.peak.strand = TRUE,
                       select = c("all", "bestOne"),
                       maxTSSDistance = 1000L,
-                      maxPeakToBDPDistance = 200L,
                       ...) {
     stopifnot(inherits(peaks, "GRanges"))
     stopifnot(inherits(annoData, c("annoGR", "GRanges")))
     stopifnot(length(bindingRegion) == 2L)
     stopifnot(bindingRegion[1] <= 0L && bindingRegion[2] >= 1L)
     stopifnot(is.numeric(maxTSSDistance))
-    stopifnot(is.numeric(maxPeakToBDPDistance))
     select <- match.arg(select)
+    if (is.null(names(annoData))) {
+        stop("annoData must have names")
+    }
     
     maxTSSDistance <- round(maxTSSDistance[1L])
     maxPeakToBDPDistance <- round(maxPeakToBDPDistance[1L])
@@ -411,8 +382,8 @@ annoPeaks <- function(peaks,
     } else {
         bindingType <- match.arg(bindingType)
     }
-
-
+    
+    # check the seqlevelStyle of peaks and annoData
     check_seqlevel <- tryCatch({
         seqlevelsStyle(peaks)
         seqlevelsStyle(annoData)
@@ -425,6 +396,7 @@ annoPeaks <- function(peaks,
         stopifnot(length(intersect(seqlevelsStyle(peaks),
                                    seqlevelsStyle(annoData))) > 0L)
     }
+
     if (ignore.peak.strand) {
         peaks$peakstrand <- strand(peaks)
         strand(peaks) <- "*"
@@ -456,6 +428,7 @@ annoPeaks <- function(peaks,
     )
     annotation.bck <- annotation
     rm(tmp)
+    gc()
 
     # If bindingType is bothSidesNearest or nearestBiDirectionalPromoters,
     # find overlaps between peaks and annotation
@@ -473,132 +446,17 @@ annoPeaks <- function(peaks,
         } else {
             ## bindingType == "nearestBiDirectionalPromoters"
             # New algorithm: First identify bidirectional promoters, then find peaks
-            # Note: bindingRegion is ignored for this bindingType in new algorithm
-            bdp_regions <- .identifyBidirectionalPromoters(annoData, maxTSSDistance)
-            
-            if (length(bdp_regions) == 0L) {
-                return(GRanges())
-            }
-            
-            # Calculate distance from peak center to BDP center
-            peak_centers <- as.integer(round((start(peaks) + end(peaks)) / 2))
-            bdp_centers <- mcols(bdp_regions)$bdp_center
-            
-            # Find peaks near bidirectional promoters (distance-based filtering)
-            peak_bdp_pairs <- list()
-            
-            for (i in seq_along(peaks)) {
-                peak_chr <- seqnames(peaks)[i]
-                peak_center <- peak_centers[i]
-                
-                # Find BDPs on the same chromosome
-                bdp_chr_idx <- seqnames(bdp_regions) == peak_chr
-                if (sum(bdp_chr_idx) == 0L) {
-                    next
-                }
-                
-                bdp_chr_centers <- bdp_centers[bdp_chr_idx]
-                
-                # Calculate distances
-                distances <- abs(bdp_chr_centers - peak_center)
-                near_bdp_idx <- distances <= maxPeakToBDPDistance
-                
-                if (any(near_bdp_idx)) {
-                    # Get global indices of BDPs on this chromosome
-                    bdp_global_idx <- which(bdp_chr_idx)
-                    for (j in which(near_bdp_idx)) {
-                        peak_bdp_pairs[[length(peak_bdp_pairs) + 1L]] <- list(
-                            peak_idx = i,
-                            bdp_idx = bdp_global_idx[j],
-                            distance = distances[j]
-                        )
-                    }
-                }
-            }
-            
-            if (length(peak_bdp_pairs) == 0L) {
-                return(GRanges())
-            }
-            
-            # For bidirectional promoters, create annotations for both genes
-            # This bypasses the standard overlap filtering logic
-            all_annotated_peaks <- list()
-            
-            for (k in seq_along(peak_bdp_pairs)) {
-                peak_idx <- peak_bdp_pairs[[k]]$peak_idx
-                bdp_idx <- peak_bdp_pairs[[k]]$bdp_idx
-                bdp <- bdp_regions[bdp_idx]
-                
-                # Get original gene annotations
-                gene1_idx <- mcols(bdp)$gene1_idx
-                gene2_idx <- mcols(bdp)$gene2_idx
-                gene1_id <- mcols(bdp)$gene1_id
-                gene2_id <- mcols(bdp)$gene2_id
-                
-                if (gene1_idx > 0L && gene1_idx <= length(annoData) &&
-                    gene2_idx > 0L && gene2_idx <= length(annoData)) {
-                    gene1_anno <- annoData[gene1_idx]
-                    gene2_anno <- annoData[gene2_idx]
-                    
-                    # Create annotation for gene 1
-                    peak_gr1 <- peaks[peak_idx]
-                    peak_gr1$peak <- names(peaks)[peak_idx]
-                    if (!is.null(names(gene1_anno))) {
-                        peak_gr1$feature <- names(gene1_anno)
-                    } else {
-                        peak_gr1$feature <- gene1_id
-                    }
-                    peak_gr1$feature.ranges <- ranges(gene1_anno)
-                    peak_gr1$feature.strand <- strand(gene1_anno)
-                    peak_gr1$distance <- distance(peak_gr1, gene1_anno, ignore.strand = ignore.peak.strand)
-                    peak_gr1$distanceToSite <- peak_bdp_pairs[[k]]$distance  # Distance to BDP center
-                    relations1 <- getRelationship(peak_gr1, gene1_anno)
-                    peak_gr1$insideFeature <- relations1$insideFeature
-                    mcols(peak_gr1) <- cbind(mcols(peak_gr1), mcols(gene1_anno))
-                    
-                    # Create annotation for gene 2
-                    peak_gr2 <- peaks[peak_idx]
-                    peak_gr2$peak <- names(peaks)[peak_idx]
-                    if (!is.null(names(gene2_anno))) {
-                        peak_gr2$feature <- names(gene2_anno)
-                    } else {
-                        peak_gr2$feature <- gene2_id
-                    }
-                    peak_gr2$feature.ranges <- ranges(gene2_anno)
-                    peak_gr2$feature.strand <- strand(gene2_anno)
-                    peak_gr2$distance <- distance(peak_gr2, gene2_anno, ignore.strand = ignore.peak.strand)
-                    peak_gr2$distanceToSite <- peak_bdp_pairs[[k]]$distance  # Distance to BDP center
-                    relations2 <- getRelationship(peak_gr2, gene2_anno)
-                    peak_gr2$insideFeature <- relations2$insideFeature
-                    mcols(peak_gr2) <- cbind(mcols(peak_gr2), mcols(gene2_anno))
-                    
-                    all_annotated_peaks[[length(all_annotated_peaks) + 1L]] <- peak_gr1
-                    all_annotated_peaks[[length(all_annotated_peaks) + 1L]] <- peak_gr2
-                }
-            }
-            
-            if (length(all_annotated_peaks) == 0L) {
-                return(GRanges())
-            }
-            
-            # Combine all annotations
-            result <- do.call(c, all_annotated_peaks)
-            
-            # Handle select = "bestOne" if needed
-            if (select == "bestOne") {
-                # For bidirectional promoters, keep both genes (select = "all" behavior)
-                # But if user wants bestOne, we could prioritize by distance
-                # For now, keep all as bidirectional promoters require both genes
-                message("Note: For bidirectional promoters, both genes are kept ",
-                        "even with select = 'bestOne'")
-            }
-            
-            return(result)
+            # whose centers are within the bidirectional promoter regions
+            all_annotated_peaks <- annotatePeaksNearBDP(peaks = peaks, annoData = annoData,
+                                                        maxTSSDistance = maxTSSDistance,
+                                                        ignore.peak.strand = ignore.peak.strand)
+            return(all_annotated_peaks)
         }
     } else {
         # Expand annotation by bindingRegion upstream and downstream
-        annotation <- .expandGRangesByBindingRegion(annotation, bindingRegion)
         idx <- as.character(strand(annotation)) != "-"
+        annotation <- .expandGRangesByBindingRegion(annotation, bindingRegion)
+        
         # Constrain expanded annotation to not exceed original feature boundaries
         if (bindingType == "startSite") {
             ## Make sure the downstream is inside gene
@@ -755,4 +613,223 @@ annoPeaks <- function(peaks,
         peaks$ANNOPEAKS__peak.oid <- NULL
     }
     peaks
+}
+
+#' Identify candidate bidirectional promoters
+#' 
+#' @description 
+#' Internal helper function to identify candidate bidirectional promoters by
+#' finding pairs of divergent genes (head-to-head) where their TSSs are within
+#' a specified distance threshold. This matches the literature definition
+#' (Adachi et al. 2007) where bidirectional promoters are shared promoter
+#' regions between two divergently transcribed genes.
+#' 
+#' @param annoData A \code{GRanges} or \code{annoGR} object containing
+#'   annotation data (genes, transcripts, or TSS positions). Must have strand
+#'   information.
+#' @param maxTSSDistance Integer. Maximum distance (in base pairs) between two
+#'   divergent TSSs to be considered a bidirectional promoter. Default is
+#'   \code{1000L} (1kb).
+#' @return A \code{GRanges} object containing bidirectional promoter regions.
+#'   Each element represents a bidirectional promoter region (the genomic
+#'   interval between two divergent TSSs). Metadata columns include:
+#'   \itemize{
+#'     \item \code{gene1_id}: ID/name of the first gene (from names or metadata)
+#'     \item \code{gene2_id}: ID/name of the second gene (from names or metadata)
+#'     \item \code{gene1_strand}: Strand of the first genae ("+" or "-")
+#'     \item \code{gene2_strand}: Strand of the second gene ("+" or "-")
+#'     \item \code{TSS1_pos}: TSS position of the first gene
+#'     \item \code{TSS2_pos}: TSS position of the second gene
+#'     \item \code{TSS_distance}: Distance between the two TSSs
+#'     \item \code{bdp_center}: Center coordinate of the bidirectional promoter region
+#'   }
+#' @details
+#' 
+#' \strong{Algorithm:}
+#' \enumerate{
+#'   \item Extract TSS positions from annotation (strand-aware: start for +,
+#'         end for -)
+#'   \item Find all pairs where one gene is on + strand and one on - strand
+#'   \item Calculate distance between TSSs
+#'   \item Filter to pairs where distance ≤ \code{maxTSSDistance}
+#'   \item Create bidirectional promoter regions (genomic interval between two divergent TSSs)
+#'   \item Calculate center coordinate of each bidirectional promoter region
+#' }
+#' 
+#' \strong{Note:} Distance calculation naturally handles cross-chromosome cases
+#' (infinite distance), so no explicit chromosome check is needed.
+#' 
+#' @author Haibo Liu
+#' @keywords internal
+#' @importFrom BiocGenerics start end strand
+.identifyBidirectionalPromoters <- function(annoData, maxTSSDistance = 1000L) {
+    stopifnot(inherits(annoData, c("GRanges", "annoGR")))
+    if (inherits(annoData, "annoGR")) {
+        annoData <- as(annoData, "GRanges")
+    }
+    stopifnot(is.numeric(maxTSSDistance))
+    maxTSSDistance <- round(maxTSSDistance[1L])
+    
+    # Extract TSS positions (strand-aware)
+    # For + strand: TSS is at start()
+    # For - strand: TSS is at end()
+    strand_vec <- as.character(strand(annoData))
+    
+    # Split by strand
+    plus_idx <- strand_vec == "+"
+    minus_idx <- strand_vec == "-"
+    
+    if (sum(plus_idx) == 0L || sum(minus_idx) == 0L) {
+        # No divergent pairs possible
+        return(GRanges())
+    }
+    
+    plus_anno_tss <- suppressWarnings(promoters(annoData[plus_idx], upstream = 0L, downstream = 1L))
+    minus_anno_tss <- suppressWarnings(promoters(annoData[minus_idx], upstream = 0L, downstream = 1L))  
+    minus_anno_tss_expanded <- suppressWarnings(promoters(annoData[minus_idx], upstream = maxTSSDistance, downstream = 0L))
+    
+    # Find all pairs of divergent TSSs
+    # For each chromosome, find pairs where + strand TSS is on the right side of - strand TSS
+    # and distance between them is <= maxTSSDistance using findOverlaps
+    ol <- findOverlaps(
+        query = plus_anno_tss,
+        subject = minus_anno_tss_expanded,
+        type = "any",
+        select = "all",
+        ignore.strand = TRUE
+    )
+    
+    if (length(ol) == 0L) { 
+        return(GRanges())
+    }
+    
+    plus_anno_tss <- plus_anno_tss[queryHits(ol)]
+    minus_anno_tss <- minus_anno_tss[subjectHits(ol)]
+
+    bdp <- suppressWarnings(GRanges(
+        seqnames = seqnames(plus_anno_tss),
+        IRanges(start = start(minus_anno_tss), end = start(plus_anno_tss)),
+        strand = "*",
+        feature1_id = names(plus_anno_tss),
+        feature2_id = names(minus_anno_tss),
+        feature1_strand = strand(plus_anno_tss),
+        feature2_strand = strand(minus_anno_tss),
+        TSS_distance = distance(plus_anno_tss, minus_anno_tss, ignore.strand = FALSE),
+        bdp_center = as.integer(round((start(minus_anno_tss) + start(plus_anno_tss)) / 2))
+    ))
+
+    list(bdp =bdp, 
+         bdp_plus_anno = annoData[plus_idx][queryHits(ol)], 
+         bdp_minus_anno = annoData[minus_idx][subjectHits(ol)])
+}
+
+## Helper function to expand GRanges by binding region
+## Expands ranges by b[1] upstream and b[2] downstream, strand-aware
+.expandGRangesByBindingRegion <- function(gr, bindingRegion) {
+    str_pos <- as.character(strand(gr)) != "-"
+    # For positive strand: extend upstream (subtract) and downstream (add)
+    # For negative strand: extend upstream (add) and downstream (subtract)
+    s1 <- ifelse(
+        str_pos,
+        start(gr) + bindingRegion[1],
+        start(gr) - bindingRegion[2]
+    )
+    s1[s1 < 1L] <- 1L
+    start(gr) <- s1
+    e1 <- ifelse(
+        str_pos,
+        end(gr) + bindingRegion[2],
+        end(gr) - bindingRegion[1]
+    )
+    # Bound by chromosome lengths
+    seql <- seqlengths(gr)
+    if (length(seql) > 0L) {
+        e1_seql <- seql[as.character(seqnames(gr))]
+        e1.idx <- which(e1 > e1_seql)
+        if (length(e1.idx) > 0L) {
+            e1[e1.idx] <- e1_seql[e1.idx]
+        }
+    }
+    end(gr) <- e1
+    gr
+}
+
+
+annotatePeaksNearBDP <- function(peaks, annoData, 
+                                maxTSSDistance = 1000L, 
+                                ignore.peak.strand = TRUE) {
+    stopifnot(inherits(peaks, "GRanges"))
+    stopifnot(inherits(annoData, c("annoGR", "GRanges")))
+    stopifnot(is.numeric(maxTSSDistance))
+    stopifnot(is.logical(ignore.peak.strand))
+    maxTSSDistance <- round(maxTSSDistance[1L])
+    ignore.peak.strand <- as.logical(ignore.peak.strand[1L])
+    if (inherits(annoData, "annoGR")) {
+        annoData <- as(annoData, "GRanges")
+    }
+    if (ignore.peak.strand) {
+        peaks$peakstrand <- strand(peaks)
+        strand(peaks) <- "*"
+    }
+    if (is.null(names(peaks))) {
+        names(peaks) <- paste0("X", seq_along(peaks))
+    }
+    bdp_regions <- .identifyBidirectionalPromoters(annoData, maxTSSDistance)
+            
+    if (length(bdp_regions) == 0L) {
+        return(peaks)
+    }
+    
+    # find overlaps between peak centers and bdp
+    peak_centers <- as.integer(round((start(peaks) + end(peaks)) / 2))
+    peak_centers <- GRanges(seqnames = seqnames(peaks),
+                            IRanges(start = peak_centers, 
+                            end = peak_centers),
+                            strand = "*")
+    ol <- findOverlaps(peak_centers, 
+                        bdp_regions$bdp,
+                        type = "any", 
+                        select = "all", 
+                        ignore.strand = TRUE)
+    if (length(ol) == 0L) {
+        return(peaks)
+    }
+    peaks <- peaks[queryHits(ol)]
+    bdp_plus_anno <- bdp_regions$bdp_plus_anno[subjectHits(ol)]
+    bdp_minus_anno <- bdp_regions$bdp_minus_anno[subjectHits(ol)]
+    
+    # For bidirectional promoters, create annotations for both genes
+    # This bypasses the standard overlap filtering logic
+    # Create annotations for both genes
+    peak_gr1 <- peaks[queryHits(ol)]
+    peak_gr1$peak <- names(peaks)[queryHits(ol)]
+    peak_gr1$feature <- names(bdp_plus_anno)
+    peak_gr1$feature.ranges <- ranges(bdp_plus_anno)
+    peak_gr1$feature.strand <- strand(bdp_plus_anno)
+    peak_gr1$distance <- distance(peak_gr1, bdp_plus_anno, 
+                                    ignore.strand = FALSE)
+    peak_gr1$distanceToSite <- distance(peak_gr1, bdp_regions$bdp, 
+                                        ignore.strand = ignore.peak.strand)
+    relations1 <- getRelationship(peak_gr1, bdp_plus_anno)
+    peak_gr1$insideFeature <- relations1$insideFeature
+    mcols(peak_gr1) <- cbind(mcols(peak_gr1), mcols(bdp_plus_anno))
+    
+    peak_gr2 <- peaks[queryHits(ol)]
+    peak_gr2$peak <- names(peaks)[queryHits(ol)]
+    peak_gr2$feature <- names(bdp_minus_anno)
+    peak_gr2$feature.ranges <- ranges(bdp_minus_anno)
+    peak_gr2$feature.strand <- strand(bdp_minus_anno)
+    peak_gr2$distance <- distance(peak_gr2, bdp_minus_anno,
+                                    ignore.strand = FALSE)
+    peak_gr2$distanceToSite <- distance(peak_gr2, bdp_regions$bdp, 
+                                        ignore.strand = ignore.peak.strand)
+    relations2 <- getRelationship(peak_gr2, bdp_minus_anno)
+    peak_gr2$insideFeature <- relations2$insideFeature
+    mcols(peak_gr2) <- cbind(mcols(peak_gr2), mcols(bdp_minus_anno))
+    all_annotated_peaks <- c(peak_gr1, peak_gr2)
+    all_annotated_peaks <- all_annotated_peaks[order(seqnames(all_annotated_peaks),
+                                                    start(all_annotated_peaks),
+                                                    end(all_annotated_peaks))]
+
+    all_annotated_peaks
 }

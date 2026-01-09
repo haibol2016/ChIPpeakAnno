@@ -26,18 +26,17 @@
 #'        peaks to be annotated.
 #' @param annoData A \link[GenomicRanges:GRanges-class]{GRanges} or
 #'        \code{\link{annoGR}} object containing annotation data (genes,
-#'        transcripts, TSS positions).
+#'        transcripts, or TSS positions).
 #' @param factor_type A character string specifying the biological factor type.
 #'        \strong{Required if using default prioritization} (when
 #'        \code{prioritization_function} is \code{NULL}). Options include: "TF", 
 #'        "H3K4me3", "H3K4me2", "H3K27ac", "H3K36me3", "H3K27me3", "PolII", "RBP",
 #'        (RNA-binding proteins),"ATAC" (accessibility), "3end" (3' end factors), 
 #'        "exon" (exon-specific), "intron" (intron-specific), "architectural" 
-#'        (architectural features), "ncRNA" (non-coding RNA), "repeat" (repetitive elements),
-#'        "intergenic" (intergenic regions), "chromatin_remodeler" (chromatin remodelers),
-#'        "multimodal" (multimodal factors), etc. Must be specified based on
-#'        biological knowledge of the factor being studied. Can be \code{NULL} if
-#'        providing a custom \code{prioritization_function}.
+#'        (architectural features),"intergenic" (intergenic regions), 
+#'        "chromatin_remodeler" (chromatin remodelers), "multimodal" (multimodal factors).
+#'        Must be specified based on biological knowledge of the factor being studied.
+#'        Can be \code{NULL} if providing a custom \code{prioritization_function}.
 #' @param is_promoter_binding Logical. If \code{TRUE} (default), treats the
 #'        factor as promoter-binding, which enables special handling of
 #'        bidirectional promoter annotations. When \code{TRUE}, peaks located in
@@ -61,10 +60,10 @@
 #'        factor-specific prioritization based on \code{factor_type}.
 #' @param return_all Logical. If \code{FALSE} (default), returns only the best
 #'        annotation per peak (plus special cases) based on priority score.
-#'        If \code{TRUE}, returns all annotations with priority scores based on 
-#'        priority score.
-#' @param ... Additional parameters passed to annotation methods or
-#'        prioritization functions.
+#'        If \code{TRUE}, returns all annotations with priority scores.
+#' @param sequencing_method Sequencing method. For PolII, it can be "ChIP-seq", 
+#'        "GRO-seq", "PRO-seq". For RBP, it can be "ChIP-seq", "CLIP-seq", "iCLIP", "eCLIP".
+#' @param ... Additional parameters passed to custom prioritization function.
 #' 
 #' @return Returns a \link[GenomicRanges:GRanges-class]{GRanges} object
 #'        containing annotated peaks. The object includes:
@@ -183,20 +182,22 @@
 #'     weight_distance = 2000  # Pass additional parameters via ...
 #' )
 #' }
-annotateHierarchically <- function(
-    peaks,
-    annoData,
-    factor_type,
-    is_promoter_binding = TRUE,
-    annotation_strategies = NULL,
-    prioritization_weights = NULL,
-    prioritization_function = NULL,
-    return_all = FALSE,
-    ...
-) {
+annotateHierarchically <- function(peaks,
+                                   annoData,
+                                   factor_type,
+                                    is_promoter_binding = TRUE,
+                                    annotation_strategies = NULL,
+                                    prioritization_weights = NULL,
+                                    prioritization_function = NULL,
+                                    return_all = FALSE,
+                                    BPPARAM = NULL,
+                                    sequencing_method = c("ChIP-seq", "GRO-seq", "PRO-seq",
+                                                          "CLIP-seq", "iCLIP", "eCLIP"),
+                                    ...
+                                ) {
     # Input validation
     if (missing(peaks)) {
-        stop("Missing required argument 'peaks'!", call. = FALSE)
+        stop("Missing required argument 'peaks'!", call. = FALSE) 
     }
     if (missing(annoData)) {
         stop("Missing required argument 'annoData'!", call. = FALSE)
@@ -227,24 +228,12 @@ annotateHierarchically <- function(
                  call. = FALSE)
         }
     }
-    
-    # Define promoter-binding factors (for bidirectional promoter detection)
-    # Only relevant if factor_type is specified
-    # promoter_binding_factors <- c("TF", "H3K4me3", "H3K4me2", "H3K27ac", "H3K4me1")
-    # is_promoter_binding <- if (!is.null(factor_type)) {
-    #     factor_type %in% promoter_binding_factors
-    # } else {
-    #     FALSE  # Default to FALSE when using custom prioritization
-    # }
-    
+      
     # Step 2: Apply multiple annotation strategies in parallel
     message("Applying multiple annotation strategies...")
-    # Get BPPARAM from ... if provided, otherwise use default
-    BPPARAM <- list(...)$BPPARAM
-    if (is.null(BPPARAM)) {
-        BPPARAM <- NULL  # Will use default in .applyMultipleStrategies
-    }
-    strategy_results <- .applyMultipleStrategies(peaks, annoData, annotation_strategies, BPPARAM = BPPARAM)
+    strategy_results <- applyMultipleStrategies(peaks, annoData, 
+                                                 annotation_strategies, 
+                                                 BPPARAM = BPPARAM)
     
     # Step 3: Combine all annotations
     # Extract non-empty annotations more efficiently
@@ -253,7 +242,7 @@ annotateHierarchically <- function(
     
     if (length(all_annotations) == 0L) {
         warning("No annotations found from any strategy.", call. = FALSE)
-        return(GRanges())
+        return(peaks)
     }
     
     # Combine all annotations at once
@@ -290,7 +279,7 @@ annotateHierarchically <- function(
     bdp_annotations <- GRanges()
     bdp_peaks <- character(0)
     if (is_promoter_binding && "is_bidirectional_promoter" %in% colnames(mcols(combined_anno))) {
-        bdp_mask <- mcols(combined_anno)$is_bidirectional_promoter %in% TRUE
+        bdp_mask <- mcols(combined_anno)$is_bidirectional_promoter == TRUE
         bdp_annotations <- combined_anno[bdp_mask]
         if (length(bdp_annotations) > 0L) {
             bdp_peaks <- unique(bdp_annotations$peak)
@@ -305,15 +294,10 @@ annotateHierarchically <- function(
     completely_covered_annotations <- GRanges()
     covered_peaks <- character(0)
     if ("insideFeature" %in% colnames(mcols(combined_anno))) {
-        # Only consider peaks not already in bidirectional promoters
-        if (length(bdp_peaks) > 0L) {
-            # Exclude bidirectional promoter peaks from completely covered analysis
-            covered_mask <- (mcols(combined_anno)$insideFeature == "includeFeature" &
-                            !combined_anno$peak %in% bdp_peaks)
-        } else {
-            covered_mask <- mcols(combined_anno)$insideFeature == "includeFeature"
-        }
-        
+        # Exclude bidirectional promoter peaks from completely covered analysis
+        covered_mask <- (mcols(combined_anno)$insideFeature == "includeFeature" &
+                        !combined_anno$peak %in% bdp_peaks)
+     
         completely_covered_annotations <- combined_anno[covered_mask]
         if (length(completely_covered_annotations) > 0L) {
             covered_peaks <- unique(completely_covered_annotations$peak)
@@ -334,13 +318,9 @@ annotateHierarchically <- function(
     excluded_peaks <- unique(c(bdp_peaks, covered_peaks))
     
     # Step 5: Apply factor-specific prioritization only to non-excluded peaks
-    if (length(excluded_peaks) > 0L) {
-        # Filter out excluded peaks for prioritization
-        prioritization_mask <- !combined_anno$peak %in% excluded_peaks
-        anno_for_prioritization <- combined_anno[prioritization_mask]
-    } else {
-        anno_for_prioritization <- combined_anno
-    }
+    # Filter out excluded peaks for prioritization
+    prioritization_mask <- !combined_anno$peak %in% excluded_peaks
+    anno_for_prioritization <- combined_anno[prioritization_mask]
     
     # Apply prioritization only to peaks not in special cases
     if (length(anno_for_prioritization) > 0L) {
@@ -350,6 +330,8 @@ annotateHierarchically <- function(
                    length(unique(anno_for_prioritization$peak)), " peaks)")
             anno_for_prioritization <- prioritization_function(
                 anno_for_prioritization, 
+                factor_type = factor_type,
+                sequencing_method = sequencing_method,
                 ...
             )
             # Validate that priority_score column exists
@@ -361,11 +343,10 @@ annotateHierarchically <- function(
             # Use default factor-specific prioritization
             message("Applying factor-specific prioritization for: ", factor_type,
                    " (", length(unique(anno_for_prioritization$peak)), " peaks)")
-            anno_for_prioritization <- .prioritizeAnnotations(
+            anno_for_prioritization <- prioritizeAnnotations(
                 anno_for_prioritization, 
                 factor_type = factor_type,
-                sequencing_method = list(...)$sequencing_method,
-                ...
+                sequencing_method = sequencing_method
             )
         }
     } else {
@@ -437,3 +418,271 @@ annotateHierarchically <- function(
         return(result)
     }
 }
+
+
+#' Apply multiple annotation strategies in parallel
+#' 
+#' @description 
+#' Internal helper function to apply multiple annotation strategies
+#' simultaneously to the same set of peaks. Each strategy uses different
+#' parameters optimized for different genomic contexts (promoters, gene bodies,
+#' intergenic regions, bidirectional promoters).
+#' 
+#' This function uses \code{\link[BiocParallel]{bplapply}} for parallel
+#' execution, allowing multiple strategies to run simultaneously and
+#' potentially providing significant speedup (up to N-fold where N is the
+#' number of strategies, limited by available CPU cores). See Details for
+#' setup instructions.
+#' 
+#' @param peaks A \code{GRanges} object containing peaks to be annotated.
+#' @param annoData A \code{GRanges} or \code{annoGR} object containing
+#'   annotation data.
+#' @param strategies A list of strategy definitions. Each strategy is a list
+#'   with:
+#'   \itemize{
+#'     \item \code{name}: Character string identifying the strategy
+#'     \item \code{method}: "annotatePeakInBatch" or "annoPeaks"
+#'     \item \code{params}: List of parameters to pass to the annotation method
+#'   }
+#'   If \code{NULL}, default strategies will be used.
+#' @param BPPARAM An optional \code{\link[BiocParallel]{BiocParallelParam}}
+#'        object specifying the parallel backend to use. If \code{NULL}
+#'        (default), uses \code{\link[BiocParallel]{bpparam}()} which
+#'        automatically detects the best available backend. For sequential
+#'        processing, use \code{BiocParallel::SerialParam()}.
+#' @return A list of annotation results, one per strategy. Each result is a
+#'   list with:
+#'   \itemize{
+#'     \item \code{annotations}: \code{GRanges} object with annotations
+#'     \item \code{strategy_name}: Name of the strategy
+#'     \item \code{metadata}: Additional information (overlap counts, etc.)
+#'   }
+#' @details
+#' 
+#' \strong{Parallel Execution:}
+#' 
+#' This function uses \code{\link[BiocParallel]{bplapply}} for parallel
+#' execution of annotation strategies. Parallel processing is automatically
+#' enabled if \code{BiocParallel} is available. To control parallel processing:
+#' \itemize{
+#'   \item Install the \code{BiocParallel} package (included in Bioconductor)
+#'   \item Use \code{BPPARAM} parameter to specify the parallel backend:
+#'         \code{BiocParallel::MulticoreParam(workers = 4)} for local
+#'         multicore, or \code{BiocParallel::SnowParam(workers = 4)} for
+#'         cluster computing
+#'   \item If \code{BPPARAM = NULL}, the function automatically uses
+#'         \code{BiocParallel::bpparam()} which detects the best available
+#'         backend
+#' }
+#' 
+#' \strong{Performance and Speedup:}
+#' \itemize{
+#'   \item \strong{Parallel execution}: Multiple strategies run simultaneously,
+#'         potentially reducing total computation time by up to N-fold where N
+#'         is the number of strategies (limited by available CPU cores)
+#'   \item \strong{Expected speedup}: With 4-5 default strategies and sufficient
+#'         cores, expect 2-4x speedup for large peak sets (>1000 peaks)
+#'   \item \strong{Best performance when}:
+#'         \itemize{
+#'           \item Multiple strategies are applied (default: 5 strategies)
+#'           \item Large peak sets are being annotated (>1000 peaks)
+#'           \item Annotation operations are computationally intensive
+#'           \item Multiple CPU cores are available
+#'         }
+#'   \item \strong{Overhead considerations}: For small peak sets (< 100 peaks),
+#'         sequential execution may be faster due to parallelization overhead.
+#'         The function automatically uses parallel execution if
+#'         \code{BiocParallel} is available.
+#' }
+#' 
+#' \strong{Default Strategies:}
+#' 
+#' \enumerate{
+#'   \item \strong{Promoter-focused}: Uses \code{annotatePeakInBatch} with
+#'         \code{output = "overlapping"}, \code{maxgap = 2000},
+#'         \code{FeatureLocForDistance = "TSS"}. Optimized for finding
+#'         promoter-proximal binding.
+#'   \item \strong{Gene body}: Uses \code{annoPeaks} with
+#'         \code{bindingType = "fullRange"}, \code{bindingRegion = c(-1000, 1000)}.
+#'         Optimized for finding gene body binding.
+#'   \item \strong{Nearest (comprehensive)}: Uses \code{annotatePeakInBatch}
+#'         with \code{output = "nearestLocation"}, \code{maxgap = 10000}.
+#'         Finds nearest features regardless of relationship type.
+#'   \item \strong{Bidirectional promoters}: Uses fixed bidirectional promoter
+#'         detection (from \code{.identifyBidirectionalPromoters}).
+#'   \item \strong{Intergenic/distal}: Uses \code{annotatePeakInBatch} with
+#'         \code{output = "nearestLocation"}, \code{maxgap = 50000}. Finds
+#'         distal/intergenic features.
+#' }
+#' 
+#' @author Haibo Liu
+#' @export
+#' @importFrom BiocGenerics start end
+#' @importFrom BiocParallel bplapply bpparam SerialParam
+applyMultipleStrategies <- function(peaks, annoData, 
+                                    strategies = NULL, 
+                                    BPPARAM = NULL) {
+    stopifnot(inherits(peaks, "GRanges"))
+    stopifnot(inherits(annoData, c("GRanges", "annoGR")))
+    
+    # Default strategies if none provided
+    if (is.null(strategies)) {
+        strategies <- list(
+            list(
+                name = "promoter",
+                method = "annotatePeakInBatch",
+                params = list(
+                    output = "both",
+                    maxgap = 3000L,
+                    FeatureLocForDistance = "TSS",
+                    PeakLocForDistance = "middle",
+                    select = "all"
+                )
+            ),
+            list(
+                name = "gene_body",
+                method = "annoPeaks",
+                params = list(
+                    bindingType = "fullRange",
+                    bindingRegion = c(-1000L, 1000L),
+                    select = "all"
+                )
+            ),
+            list(
+                name = "nearest",
+                method = "annotatePeakInBatch",
+                params = list(
+                    output = "nearestLocation",
+                    maxgap = 10000L,
+                    FeatureLocForDistance = "TSS",
+                    PeakLocForDistance = "middle",
+                    select = "all"
+                )
+            ),
+            list(
+                name = "bidirectional",
+                method = "bidirectional_promoters",
+                params = list(
+                    maxTSSDistance = 1000L,
+                    ignore.peak.strand = TRUE
+                )
+            ),
+            list(
+                name = "intergenic",
+                method = "annotatePeakInBatch",
+                params = list(
+                    output = "nearestLocation",
+                    maxgap = 10000L,
+                    FeatureLocForDistance = "TSS",
+                    PeakLocForDistance = "middle",
+                    select = "all"
+                )
+            )
+        )
+    }
+    
+    # Helper function to apply a single strategy
+    applySingleStrategy <- function(strategy) {
+        strategy_name <- strategy$name
+        method <- strategy$method
+        params <- strategy$params
+        
+        tryCatch({
+            if (method == "annotatePeakInBatch") {
+                # Call annotatePeakInBatch with params
+                anno_result <- do.call(
+                    annotatePeakInBatch,
+                    c(list(myPeakList = peaks, AnnotationData = annoData), params)
+                )
+                
+                # Add strategy metadata
+                if (length(anno_result) > 0L) {
+                    anno_result$strategy_name <- strategy_name
+                }
+                
+                return(list(
+                    annotations = anno_result,
+                    strategy_name = strategy_name,
+                    metadata = list(
+                        n_annotations = length(anno_result),
+                        n_unique_peaks = if (length(anno_result) > 0L && "peak" %in% colnames(mcols(anno_result))) {
+                            length(unique(anno_result$peak))
+                        } else {
+                            0L
+                        }
+                    )
+                ))
+            } else if (method == "annoPeaks") {
+                # Call annoPeaks with params
+                anno_result <- do.call(
+                    annoPeaks,
+                    c(list(peaks = peaks, annoData = annoData), params)
+                )
+                
+                # Add strategy metadata
+                if (length(anno_result) > 0L) {
+                    anno_result$strategy_name <- strategy_name
+                }
+                
+                return(list(
+                    annotations = anno_result,
+                    strategy_name = strategy_name,
+                    metadata = list(
+                        n_annotations = length(anno_result),
+                        n_unique_peaks = if (length(anno_result) > 0L && "peak" %in% colnames(mcols(anno_result))) {
+                            length(unique(anno_result$peak))
+                        } else {
+                            0L
+                        }
+                    )
+                ))
+            } else if (method == "bidirectional_promoters") {
+                # Use bidirectional promoter detection
+                anno_result <- annotatePeaksNearBDP(peaks = peaks, annoData = annoData,
+                                                        maxTSSDistance = params$maxTSSDistance,
+                                                        ignore.peak.strand = params$ignore.peak.strand)
+                return(anno_result)
+            } else {
+                warning("Unknown annotation method: ", method, 
+                       " for strategy: ", strategy_name, call. = FALSE)
+                return(list(
+                    annotations = GRanges(),
+                    strategy_name = strategy_name,
+                    metadata = list(n_annotations = 0L, n_unique_peaks = 0L)
+                ))
+            }
+        }, error = function(e) {
+            warning("Error applying strategy '", strategy_name, "': ", 
+                   conditionMessage(e), call. = FALSE)
+            return(list(
+                annotations = GRanges(),
+                strategy_name = strategy_name,
+                metadata = list(n_annotations = 0L, n_unique_peaks = 0L, error = conditionMessage(e))
+            ))
+        })
+    }
+
+    # Setup BiocParallel backend
+    if (is.null(BPPARAM)) {
+        if (requireNamespace("BiocParallel", quietly = TRUE)) {
+            BPPARAM <- BiocParallel::bpparam()
+        } else {
+            BPPARAM <- BiocParallel::SerialParam()
+        }
+    }
+    
+    # Apply strategies in parallel using BiocParallel
+    if (requireNamespace("BiocParallel", quietly = TRUE)) {
+        results_list <- BiocParallel::bplapply(strategies, applySingleStrategy,
+                                              BPPARAM = BPPARAM)
+    } else {
+        # Fallback to sequential if BiocParallel not available
+        results_list <- lapply(strategies, applySingleStrategy)
+    }
+    
+    # Convert to named list using strategy names
+    results <- setNames(results_list, sapply(strategies, function(s) s$name))
+    
+    return(results)
+}
+

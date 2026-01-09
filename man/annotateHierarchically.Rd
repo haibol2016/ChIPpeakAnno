@@ -13,6 +13,8 @@ annotateHierarchically(
   prioritization_weights = NULL,
   prioritization_function = NULL,
   return_all = FALSE,
+  BPPARAM = NULL,
+  sequencing_method = c("ChIP-seq", "GRO-seq", "PRO-seq", "CLIP-seq", "iCLIP", "eCLIP"),
   ...
 )
 }
@@ -22,7 +24,7 @@ peaks to be annotated.}
 
 \item{annoData}{A \link[GenomicRanges:GRanges-class]{GRanges} or
 \code{\link{annoGR}} object containing annotation data (genes,
-transcripts, TSS positions).}
+transcripts, or TSS positions).}
 
 \item{factor_type}{A character string specifying the biological factor type.
 \strong{Required if using default prioritization} (when
@@ -30,11 +32,10 @@ transcripts, TSS positions).}
 "H3K4me3", "H3K4me2", "H3K27ac", "H3K36me3", "H3K27me3", "PolII", "RBP",
 (RNA-binding proteins),"ATAC" (accessibility), "3end" (3' end factors), 
 "exon" (exon-specific), "intron" (intron-specific), "architectural" 
-(architectural features), "ncRNA" (non-coding RNA), "repeat" (repetitive elements),
-"intergenic" (intergenic regions), "chromatin_remodeler" (chromatin remodelers),
-"multimodal" (multimodal factors), etc. Must be specified based on
-biological knowledge of the factor being studied. Can be \code{NULL} if
-providing a custom \code{prioritization_function}.}
+(architectural features),"intergenic" (intergenic regions), 
+"chromatin_remodeler" (chromatin remodelers), "multimodal" (multimodal factors).
+Must be specified based on biological knowledge of the factor being studied.
+Can be \code{NULL} if providing a custom \code{prioritization_function}.}
 
 \item{is_promoter_binding}{Logical. If \code{TRUE} (default), treats the
 factor as promoter-binding, which enables special handling of
@@ -63,11 +64,12 @@ factor-specific prioritization based on \code{factor_type}.}
 
 \item{return_all}{Logical. If \code{FALSE} (default), returns only the best
 annotation per peak (plus special cases) based on priority score.
-If \code{TRUE}, returns all annotations with priority scores based on 
-priority score.}
+If \code{TRUE}, returns all annotations with priority scores.}
 
-\item{...}{Additional parameters passed to annotation methods or
-prioritization functions.}
+\item{sequencing_method}{Sequencing method. For PolII, it can be "ChIP-seq", 
+"GRO-seq", "PRO-seq". For RBP, it can be "ChIP-seq", "CLIP-seq", "iCLIP", "eCLIP".}
+
+\item{...}{Additional parameters passed to custom prioritization function.}
 }
 \value{
 Returns a \link[GenomicRanges:GRanges-class]{GRanges} object

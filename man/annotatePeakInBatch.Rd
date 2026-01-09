@@ -11,7 +11,7 @@ annotatePeakInBatch(
   AnnotationData,
   output = c("nearestLocation", "overlapping", "both", "shortestDistance", "inside",
     "upstream&inside", "inside&downstream", "upstream", "downstream",
-    "upstreamORdownstream", "nearestBiDirectionalPromoters"),
+    "upstreamORdownstream", "upstream2downstream", "nearestBiDirectionalPromoters"),
   multiple = c(TRUE, FALSE),
   maxgap = -1L,
   PeakLocForDistance = c("start", "middle", "end", "endMinusStart"),
@@ -29,9 +29,11 @@ represent a genomic interval (peak) with seqnames, start, end, and
 optionally strand information.}
 
 \item{mart}{A \code{\link[biomaRt]{Mart}} object from the biomaRt package,
-used to query annotation data if \code{AnnotationData} is not supplied.
-See \code{\link[biomaRt]{useMart}} for details. Only needed when
-\code{AnnotationData} is not provided.}
+or a customized annotation of class \code{\link[GenomicRanges]{GRanges}}. 
+This parameter is used to query annotation data if \code{AnnotationData} 
+is not supplied. If both \code{mart} and \code{AnnotationData} are provided, 
+\code{AnnotationData} takes precedence. Only needed when \code{AnnotationData}
+is not provided. See \code{\link[biomaRt]{useMart}} for details.}
 
 \item{featureType}{A character vector specifying the type of annotation to
 retrieve when using \code{mart} and \code{AnnotationData} is not
@@ -43,7 +45,8 @@ may include multiple exons per gene. (why exon? why not use gene? or transcript?
 \code{\link{annoGR}} object. It can be the output from the function 
 \code{\link{getAnnotation}} or a customized annotation of class
 \code{\link[GenomicRanges]{GRanges}} with additional variable:
-\code{strand} (1 or + for positive strand and -1 or - for negative strand).}
+\code{strand} (1 or + for positive strand and -1 or - for negative strand). 
+This parameter takes precedence over \code{mart}.}
 
 \item{output}{A character, specifying what type of features meeting annotation
 criteria should be output. Available options are:
@@ -115,13 +118,19 @@ which provides more control over feature selection. When
 issued and \code{select} is automatically set to "first".}
 
 \item{maxgap}{An integer specifying the maximum gap allowed
-between a peak and a feature for them to be considered as overlapping.
-The gap is the number of base pairs separating the two intervals.
-By convention: when intervals overlap or one is contained within the
-other, the gap is 0; when intervals are disjoint, the gap is the
-distance between them. Default is -1L, which means no gap is allowed
-(only true overlaps are considered). Use 0 to allow adjacent intervals,
-or a positive value (e.g., 1000) to allow features within 1kb of peaks.}
+ between a peak and a feature for them to be considered as overlapping.
+ The gap is the number of base pairs separating the two intervals.
+ By convention: when intervals overlap or one is contained within the
+ other, the gap is 0; when intervals are disjoint, the gap is the
+ distance between them. Default is -1L, which means no gap is allowed
+ (only true overlaps are considered). Use 0 to allow adjacent intervals,
+ or a positive value (e.g., 1000) to allow features within 1kb of peaks.
+ Note: this parameter is ignored when using \code{annoPeaks()} function.
+ When annotatePeakInBatch's annotation method is used, it is used when 
+ `output` is "upstream&inside", "inside&downstream", "overlapping",
+"upstream", "downstream", "upstreamORdownstream", "upstream2downstream";
+ but it is not used when output is "nearestLocation", "shortestDistance", 
+ "inside", "nearestBiDirectionalPromoters",}
 
 \item{PeakLocForDistance}{A character specifying the reference point within
 each peak region used for distance calculations. Options are:

@@ -158,19 +158,14 @@
 #' ## Note: Using pre-computed TSS for example only.
 #' ## Users should generate annotations matching their genome assembly.
 #' data(TSS.human.GRCh37)
-#' seqlevelsStyle(TSS.human.GRCh37) <- seqlevelsStyle(myPeakList)
-#' 
-#' ## Find peaks near bidirectional promoters
-#' ## Using default parameters: maxTSSDistance = 1000bp, maxPeakToBDPDistance = 200bp
-#' annotatedBDP <- peaksNearBDP(myPeakList[1:6,], 
-#'                               AnnotationData = TSS.human.GRCh37)
+#' seqlevelsStyle(TSS.human.GRCh37) <- seqlevelsStyle(myPeakList)[1]
 #' 
 #' ## Customize parameters
-#' annotatedBDP <- peaksNearBDP(myPeakList[1:6,], 
-#'                               AnnotationData = TSS.human.GRCh37,
-#'                               maxTSSDistance = 1500L,      # TSSs within 1.5kb
-#'                               maxPeakToBDPDistance = 300L) # Peak center within 300bp
-#' 
+#' annotatedBDP <- peaksNearBDP(myPeakList[1:6,],
+#'                              AnnotationData=TSS.human.GRCh37,
+#'                              MaxDistance=5000,
+#'                              PeakLocForDistance =  "middle", 
+#'                              FeatureLocForDistance = "TSS")
 #' ## View results
 #' annotatedBDP$peaksWithBDP
 #' c(annotatedBDP$percentPeaksWithBDP, 
@@ -179,160 +174,48 @@
 #' }
 #' 
 peaksNearBDP <- function(myPeakList, AnnotationData,
-                         MaxDistance = 5000L,
-                         maxTSSDistance = 1000L,
-                         maxPeakToBDPDistance = 200L,
-                         ...) {
-    if (missing(myPeakList)) {
+                         MaxDistance=5000L, ...){
+        if (missing(myPeakList)) {
         stop("Missing required argument myPeakList!")
     }
     if (!inherits(myPeakList, c("GRanges"))) {
         stop("myPeakList needs to be GRanges object")
     }
-    if (!missing(AnnotationData)) {
+    if (!missing(AnnotationData)){        
         if (!inherits(AnnotationData, c("GRanges", "annoGR"))) {
             stop("AnnotationData needs to be GRanges or annoGR object")
         }
-        if (inherits(AnnotationData, "annoGR")) {
-            AnnotationData <- as(AnnotationData, "GRanges")
-        }
-    } else {
+        if(is(AnnotationData, "annoGR"))
+            AnnotationData <- AnnotationData@gr
+    }else{
         stop("Missing required argument AnnotationData!")
     }
     stopifnot(length(intersect(seqlevelsStyle(myPeakList),
-                               seqlevelsStyle(AnnotationData))) > 0)
+                               seqlevelsStyle(AnnotationData)))>0)
     stopifnot(is.numeric(MaxDistance))
-    stopifnot(is.numeric(maxTSSDistance))
-    stopifnot(is.numeric(maxPeakToBDPDistance))
     
-    # MaxDistance is deprecated but kept for backward compatibility
-    if (MaxDistance != 5000L) {
-        warning("MaxDistance parameter is deprecated and no longer used. ",
-                "Use maxTSSDistance and maxPeakToBDPDistance instead.",
-                call. = FALSE)
-    }
-    
-    maxTSSDistance <- round(maxTSSDistance[1L])
-    maxPeakToBDPDistance <- round(maxPeakToBDPDistance[1L])
-    
+    MaxDistance <- round(MaxDistance[1])
     myPeakList <- unique(myPeakList)
-    
-    # Ensure peaks have names
-    if (is.null(names(myPeakList))) {
-        names(myPeakList) <- paste0("peak_", seq_along(myPeakList))
+    myPeakList$bdp_idx <- seq_along(myPeakList)
+    anno <- annoPeaks(myPeakList, AnnotationData, 
+                      bindingType = "nearestBiDirectionalPromoters",
+                      bindingRegion = c(-1*MaxDistance, MaxDistance))
+    if(length(anno)<1){
+        return(list(peaksWithBDP=anno,
+                    percentPeaksWithBDP=0,
+                    n.peaks=length(myPeakList),
+                    n.peaksWithBDP=0))
     }
-    
-    # Step 1: Identify candidate bidirectional promoters
-    bdp_regions <- .identifyBidirectionalPromoters(AnnotationData, maxTSSDistance)
-    
-    if (length(bdp_regions) == 0L) {
-        return(list(peaksWithBDP = GRangesList(),
-                    percentPeaksWithBDP = 0,
-                    n.peaks = length(myPeakList),
-                    n.peaksWithBDP = 0))
-    }
-    
-    # Step 2: Calculate distance from peak center to BDP center
-    # Calculate peak centers
-    peak_centers <- as.integer(round((start(myPeakList) + end(myPeakList)) / 2))
-    bdp_centers <- mcols(bdp_regions)$bdp_center
-    
-    # Find peaks near bidirectional promoters
-    # For each peak, check distance to each BDP center
-    all_annotations <- list()
-    
-    for (i in seq_along(myPeakList)) {
-        peak_chr <- seqnames(myPeakList)[i]
-        peak_center <- peak_centers[i]
-        
-        # Find BDPs on the same chromosome
-        bdp_chr_idx <- seqnames(bdp_regions) == peak_chr
-        if (sum(bdp_chr_idx) == 0L) {
-            next
-        }
-        
-        bdp_chr <- bdp_regions[bdp_chr_idx]
-        bdp_chr_centers <- bdp_centers[bdp_chr_idx]
-        
-        # Calculate distances
-        distances <- abs(bdp_chr_centers - peak_center)
-        near_bdp_idx <- distances <= maxPeakToBDPDistance
-        
-        if (any(near_bdp_idx)) {
-            # Create annotations for both genes in each bidirectional promoter
-            for (j in which(near_bdp_idx)) {
-                bdp <- bdp_chr[j]
-                
-                # Get original gene annotations using stored indices
-                gene1_idx <- mcols(bdp)$gene1_idx
-                gene2_idx <- mcols(bdp)$gene2_idx
-                gene1_id <- mcols(bdp)$gene1_id
-                gene2_id <- mcols(bdp)$gene2_id
-                
-                # Retrieve original gene annotations
-                if (gene1_idx > 0L && gene1_idx <= length(AnnotationData) &&
-                    gene2_idx > 0L && gene2_idx <= length(AnnotationData)) {
-                    gene1_anno <- AnnotationData[gene1_idx]
-                    gene2_anno <- AnnotationData[gene2_idx]
-                    # Create annotation entries for both genes
-                    peak_gr <- myPeakList[i]
-                    peak_gr$peak <- names(myPeakList)[i]
-                    
-                    # Annotation for gene 1
-                    anno1 <- peak_gr
-                    anno1$feature <- gene1_id
-                    anno1$feature.ranges <- ranges(gene1_anno[1L])
-                    anno1$feature.strand <- strand(gene1_anno[1L])
-                    anno1$distance <- distance(peak_gr, gene1_anno[1L])
-                    anno1$distanceToSite <- distances[j]  # Distance to BDP center
-                    anno1$insideFeature <- "overlap"  # Simplified for BDP
-                    anno1$peak <- names(myPeakList)[i]  # Peak identifier
-                    anno1$is_bidirectional_promoter <- TRUE
-                    mcols(anno1) <- cbind(mcols(anno1), mcols(gene1_anno[1L]))
-                    
-                    # Annotation for gene 2
-                    anno2 <- peak_gr
-                    anno2$feature <- gene2_id
-                    anno2$feature.ranges <- ranges(gene2_anno[1L])
-                    anno2$feature.strand <- strand(gene2_anno[1L])
-                    anno2$distance <- distance(peak_gr, gene2_anno[1L])
-                    anno2$distanceToSite <- distances[j]  # Distance to BDP center
-                    anno2$insideFeature <- "overlap"  # Simplified for BDP
-                    anno2$peak <- names(myPeakList)[i]  # Peak identifier
-                    anno2$is_bidirectional_promoter <- TRUE
-                    mcols(anno2) <- cbind(mcols(anno2), mcols(gene2_anno[1L]))
-                    
-                    # Add BDP metadata
-                    anno1$bdp_region_start <- start(bdp)
-                    anno1$bdp_region_end <- end(bdp)
-                    anno1$bdp_center <- bdp_centers[bdp_chr_idx][j]
-                    anno1$TSS_distance <- mcols(bdp)$TSS_distance
-                    anno2$bdp_region_start <- start(bdp)
-                    anno2$bdp_region_end <- end(bdp)
-                    anno2$bdp_center <- bdp_centers[bdp_chr_idx][j]
-                    anno2$TSS_distance <- mcols(bdp)$TSS_distance
-                    
-                    # Add both annotations to the list
-                    all_annotations[[length(all_annotations) + 1L]] <- anno1
-                    all_annotations[[length(all_annotations) + 1L]] <- anno2
-                }
-            }
-        }
-    }
-    
-    if (length(all_annotations) == 0L) {
-        return(list(peaksWithBDP = GRangesList(),
-                    percentPeaksWithBDP = 0,
-                    n.peaks = length(myPeakList),
-                    n.peaksWithBDP = 0))
-    }
-    
-    # Convert to GRangesList, grouped by peak
-    all_anno <- do.call(c, all_annotations)
-    anno.s <- split(all_anno, all_anno$peak)
-    
-    list(peaksWithBDP = anno.s,
-         percentPeaksWithBDP = length(anno.s) / length(myPeakList),
-         n.peaks = length(myPeakList),
-         n.peaksWithBDP = length(anno.s))
+    anno.s <- split(anno, anno$bdp_idx)
+    len <- elementNROWS(anno.s)
+    anno.s <- anno.s[len>=2]
+    len <- sapply(anno.s, function(.ele){
+        std <- .ele$feature.strand
+        all(c("+", "-") %in% as.character(.ele$feature.strand))
+    })
+    anno.s <- anno.s[len]
+    list(peaksWithBDP=anno.s,
+         percentPeaksWithBDP = length(anno.s)/length(myPeakList),
+         n.peaks=length(myPeakList),
+         n.peaksWithBDP=length(anno.s))
 }

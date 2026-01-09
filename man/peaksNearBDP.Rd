@@ -4,14 +4,7 @@
 \alias{peaksNearBDP}
 \title{Identify peaks near bidirectional promoters}
 \usage{
-peaksNearBDP(
-  myPeakList,
-  AnnotationData,
-  MaxDistance = 5000L,
-  maxTSSDistance = 1000L,
-  maxPeakToBDPDistance = 200L,
-  ...
-)
+peaksNearBDP(myPeakList, AnnotationData, MaxDistance = 5000L, ...)
 }
 \arguments{
 \item{myPeakList}{A \link[GenomicRanges:GRanges-class]{GRanges} object
@@ -41,6 +34,8 @@ peaks. In the new algorithm, bidirectional promoters are identified
 first, then peaks are filtered by distance from peak center to BDP center.
 Default is \code{5000L}.}
 
+\item{...}{Additional parameters (currently not used)}
+
 \item{maxTSSDistance}{A single integer value specifying the maximum distance
 (in base pairs) between two divergent TSSs to be considered a
 bidirectional promoter. Default is \code{1000L} (1kb). This determines
@@ -52,8 +47,6 @@ center for a peak to be considered "near" a bidirectional promoter.
 Default is \code{200L} (200 bp). This distance-based filtering is more
 precise than overlap-based detection, focusing on peaks actually
 centered near the bidirectional promoter.}
-
-\item{...}{Additional parameters (currently not used)}
 }
 \value{
 Returns a list with the following components:
@@ -165,19 +158,14 @@ data(myPeakList)
 ## Note: Using pre-computed TSS for example only.
 ## Users should generate annotations matching their genome assembly.
 data(TSS.human.GRCh37)
-seqlevelsStyle(TSS.human.GRCh37) <- seqlevelsStyle(myPeakList)
-
-## Find peaks near bidirectional promoters
-## Using default parameters: maxTSSDistance = 1000bp, maxPeakToBDPDistance = 200bp
-annotatedBDP <- peaksNearBDP(myPeakList[1:6,], 
-                              AnnotationData = TSS.human.GRCh37)
+seqlevelsStyle(TSS.human.GRCh37) <- seqlevelsStyle(myPeakList)[1]
 
 ## Customize parameters
-annotatedBDP <- peaksNearBDP(myPeakList[1:6,], 
-                              AnnotationData = TSS.human.GRCh37,
-                              maxTSSDistance = 1500L,      # TSSs within 1.5kb
-                              maxPeakToBDPDistance = 300L) # Peak center within 300bp
-
+annotatedBDP <- peaksNearBDP(myPeakList[1:6,],
+                             AnnotationData=TSS.human.GRCh37,
+                             MaxDistance=5000,
+                             PeakLocForDistance =  "middle", 
+                             FeatureLocForDistance = "TSS")
 ## View results
 annotatedBDP$peaksWithBDP
 c(annotatedBDP$percentPeaksWithBDP, 
