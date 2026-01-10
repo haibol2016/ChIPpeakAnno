@@ -49,8 +49,8 @@ Available options:
         identifies candidate bidirectional promoters by finding pairs
         of divergent genes (head-to-head) where their TSSs are within
         \code{maxTSSDistance}, then (2) finds peaks whose centers are
-        within \code{maxPeakToBDPDistance} of the bidirectional promoter
-        centers. This matches the literature definition (Adachi et al.
+        overlapping with the bidirectional promoter regions.
+        This matches the literature definition (Adachi et al.
         2007) where bidirectional promoters are shared promoter regions
         between two divergently transcribed genes. Reports annotations
         for both genes in each bidirectional promoter pair. Note:
@@ -68,8 +68,7 @@ Available options:
         Annotation regions are expanded by \code{bindingRegion}
   \item \code{"nearestBiDirectionalPromoters"}: Uses distance-based
         filtering (peak center to BDP center) instead of region expansion.
-        \code{bindingRegion} is ignored; use \code{maxTSSDistance} and
-        \code{maxPeakToBDPDistance} instead.
+        \code{bindingRegion} is ignored; use \code{maxTSSDistance} instead.
   \item \code{"bothSidesNearest"} (deprecated): Peak regions are
         expanded by \code{bindingRegion}
 }}
@@ -86,8 +85,7 @@ downstream of the feature reference point. Only peaks within this
 expanded region are considered for annotation.
 
 \strong{Note:} For \code{bindingType = "nearestBiDirectionalPromoters"},
-this parameter is ignored. Use \code{maxTSSDistance} and
-\code{maxPeakToBDPDistance} instead.}
+this parameter is ignored. Use \code{maxTSSDistance} instead.}
 
 \item{ignore.peak.strand}{A logical value indicating whether to ignore peak
 strand information when calculating distances. When \code{TRUE}
@@ -121,14 +119,6 @@ is only used when \code{bindingType = "nearestBiDirectionalPromoters"}.
 This determines which gene pairs form bidirectional promoters.}
 
 \item{...}{Additional parameters (currently not used)}
-
-\item{maxPeakToBDPDistance}{A single integer value specifying the maximum
-distance (in base pairs) from peak center to bidirectional promoter
-center for a peak to be considered "near" a bidirectional promoter.
-Default is \code{200L} (200 bp). This parameter is only used when
-\code{bindingType = "nearestBiDirectionalPromoters"}. This
-distance-based filtering is more precise than overlap-based detection,
-focusing on peaks actually centered near the bidirectional promoter.}
 }
 \value{
 Returns a \link[GenomicRanges:GRanges-class]{GRanges} object

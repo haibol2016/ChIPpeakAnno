@@ -1,70 +1,121 @@
-Package: ChIPpeakAnno
 Type: Package
-Title: 
-        Batch annotation of the peaks identified from either ChIP-seq,
-        ChIP-chip experiments, or any experiments that result in large
-        number of genomic interval data
+Package: ChIPpeakAnno
+Title: Batch annotation of the peaks identified from either ChIP-seq,
+    ChIP-chip experiments, or any experiments that result in large number
+    of genomic interval data
 Version: 3.45.2
-Encoding: UTF-8
-Author: 
-        Lihua Julie Zhu,
-        Jianhong Ou, 
-        Jun Yu, 
-        Kai Hu, 
-        Haibo Liu, 
-        Junhui Li, 
-        Hervé Pagès, 
-        Claude Gazin,
-        Nathan Lawson, 
-        Ryan Thompson, 
-        Simon Lin, 
-        David Lapointe,
-        Michael Green
-Maintainer: 
-        Jianhong Ou <jou@morgridge.org>,
-        Lihua Julie Zhu <julie.zhu@umassmed.edu>,
-        Kai Hu <kai.hu@umassmed.edu>,
-        Junhui Li <junhui.li@umassmed.edu>
-Depends: 
-        R (>= 3.5), methods, IRanges (>= 2.13.12), 
-        GenomicRanges (>= 1.31.8), S4Vectors (>= 0.17.25)
-Imports: 
-        AnnotationDbi, BiocGenerics (>= 0.1.0), Biostrings (>=
-        2.47.6), pwalign, DBI, dplyr, GenomeInfoDb,
-        GenomicAlignments, GenomicFeatures, RBGL, Rsamtools,
-        SummarizedExperiment, VennDiagram, biomaRt, ggplot2, grDevices,
-        graph, graphics, grid, InteractionSet, KEGGREST, matrixStats,
-        multtest, regioneR, rtracklayer, stats, utils, universalmotif,
-        stringr, tibble, tidyr, data.table, scales, ensembldb
-Suggests: 
-        AnnotationHub, BSgenome, limma, reactome.db, BiocManager,
-        BiocStyle, BSgenome.Ecoli.NCBI.20080805,
-        BSgenome.Hsapiens.UCSC.hg19, org.Ce.eg.db, org.Hs.eg.db,
-        BSgenome.Celegans.UCSC.ce10, BSgenome.Drerio.UCSC.danRer7,
-        BSgenome.Hsapiens.UCSC.hg38, DelayedArray, idr, seqinr,
-        EnsDb.Hsapiens.v75, EnsDb.Hsapiens.v79, EnsDb.Hsapiens.v86,
-        TxDb.Hsapiens.UCSC.hg18.knownGene,
-        TxDb.Hsapiens.UCSC.hg19.knownGene,
-        TxDb.Hsapiens.UCSC.hg38.knownGene, GO.db, gplots, UpSetR,
-        knitr, rmarkdown, reshape2, testthat, trackViewer, motifStack,
-        OrganismDbi, BiocFileCache
-Description: 
-        The package encompasses a range of functions for identifying the 
-        closest gene, exon, miRNA, or custom features—such as highly conserved
-        elements and user-supplied transcription factor binding sites. 
-        Additionally, users can retrieve sequences around the peaks and obtain 
-        enriched Gene Ontology (GO) or Pathway terms. In version 2.0.5 and beyond,
-        new functionalities have been introduced. These include features for 
-        identifying peaks associated with bi-directional promoters along with 
-        summary statistics (peaksNearBDP), summarizing motif occurrences in 
-        peaks (summarizePatternInPeaks), and associating additional identifiers 
-        with annotated peaks or enrichedGO (addGeneIDs). The package integrates 
-        with various other packages such as biomaRt, IRanges, Biostrings, BSgenome, 
-        GO.db, multtest, and stat to enhance its analytical capabilities.
+Authors@R: 
+    c(
+        person("Lihua Julie", "Zhu", email = "julie.zhu@umassmed.edu"),
+        person("Jianhong", "Ou", email = "jou@morgridge.org", role = "cre"),
+        person("Jun", "Yu"),
+        person("Kai", "Hu", email = "kai.hu@umassmed.edu"),
+        person("Haibo", "Liu", email = "haibo.liu@umassmed.edu"),
+        person("Junhui", "Li", email = "junhui.li@umassmed.edu",),
+        person("Hervé", "Pagès"),
+        person("Claude", "Gazin"),
+        person("Nathan", "Lawson"),
+        person("Ryan", "Thompson"),
+        person("Simon", "Lin"),
+        person("David", "Lapointe"),
+        person("Michael", "Green")
+    )
+Description: The package encompasses a range of functions for identifying
+    the closest gene, exon, miRNA, or custom features—such as highly
+    conserved elements and user-supplied transcription factor binding
+    sites.  Additionally, users can retrieve sequences around the peaks
+    and obtain enriched Gene Ontology (GO) or Pathway terms. In version
+    2.0.5 and beyond, new functionalities have been introduced. These
+    include features for identifying peaks associated with bi-directional
+    promoters along with summary statistics (peaksNearBDP), summarizing
+    motif occurrences in peaks (summarizePatternInPeaks), and associating
+    additional identifiers with annotated peaks or enrichedGO
+    (addGeneIDs). The package integrates with various other packages such
+    as biomaRt, IRanges, Biostrings, BSgenome, GO.db, multtest, and stat
+    to enhance its analytical capabilities.
 License: GPL (>= 2)
-LazyLoad: yes
+Depends: 
+    GenomicRanges (>= 1.31.8),
+    IRanges (>= 2.13.12),
+    methods,
+    R (>= 3.5),
+    S4Vectors (>= 0.17.25)
+Imports: 
+    AnnotationDbi,
+    BiocGenerics (>= 0.1.0),
+    biomaRt,
+    Biostrings (>= 2.47.6),
+    data.table,
+    DBI,
+    dplyr,
+    ensembldb,
+    GenomeInfoDb,
+    GenomicAlignments,
+    GenomicFeatures,
+    ggplot2,
+    graph,
+    graphics,
+    grDevices,
+    grid,
+    InteractionSet,
+    KEGGREST,
+    matrixStats,
+    multtest,
+    pwalign,
+    RBGL,
+    regioneR,
+    Rsamtools,
+    rtracklayer,
+    scales,
+    stats,
+    stringr,
+    SummarizedExperiment,
+    tibble,
+    tidyr,
+    universalmotif,
+    utils,
+    VennDiagram
+Suggests: 
+    AnnotationHub,
+    BiocFileCache,
+    BiocManager,
+    BiocParallel,
+    BiocStyle,
+    BSgenome,
+    BSgenome.Celegans.UCSC.ce10,
+    BSgenome.Drerio.UCSC.danRer7,
+    BSgenome.Ecoli.NCBI.20080805,
+    BSgenome.Hsapiens.UCSC.hg19,
+    BSgenome.Hsapiens.UCSC.hg38,
+    DelayedArray,
+    EnsDb.Hsapiens.v75,
+    EnsDb.Hsapiens.v79,
+    EnsDb.Hsapiens.v86,
+    GO.db,
+    gplots,
+    idr,
+    knitr,
+    limma,
+    LOLA,
+    motifStack,
+    org.Ce.eg.db,
+    org.Hs.eg.db,
+    OrganismDbi,
+    reactome.db,
+    reshape2,
+    rmarkdown,
+    seqinr,
+    testthat,
+    trackViewer,
+    TxDb.Hsapiens.UCSC.hg18.knownGene,
+    TxDb.Hsapiens.UCSC.hg19.knownGene,
+    TxDb.Hsapiens.UCSC.hg38.knownGene,
+    UpSetR
+VignetteBuilder: 
+    knitr
+biocViews: Annotation, ChIPSeq, ChIPchip
+Encoding: UTF-8
 LazyData: true
 LazyDataCompression: xz
-biocViews: Annotation, ChIPSeq, ChIPchip
-VignetteBuilder: knitr
+LazyLoad: yes
 RoxygenNote: 7.3.3

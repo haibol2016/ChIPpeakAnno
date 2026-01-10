@@ -695,6 +695,8 @@ annotatePeakInBatch <-
         message("No AnnotationData as GRanges is passed in, ",
                 "so now querying biomart database for AnnotationData ....")
         TSS.ordered <- .prepareAnnotationData(mart, AnnotationData, featureType)
+    } else {
+        TSS.ordered <- AnnotationData
     }
 
     # NOTES: annoPeaks() is used for peak-centric annotation when valid `bindingRegion`
@@ -768,20 +770,21 @@ annotatePeakInBatch <-
     unique_chr_peaks <- unique(as.character(seqnames(myPeakList)))
 
     results <- lapply(unique_chr_peaks, function(chr) {
-            # if there is no annotation for this chromosome, return peaks with NA annotations
-            if (!chr %in% names(anno_by_chr) || length(anno_by_chr[[chr]]) == 0L) {
-                peaks_chr <- peaks_by_chr[[chr]]
-                if (length(peaks_chr) > 0L) {
-                    peaks_chr$peak <- names(peaks_chr)
-                    for (col in c("feature", "start_position", "end_position", 
-                                "feature_strand", "insideFeature", 
-                                "distancetoFeature", "shortestDistance",
-                                "fromOverlappingOrNearest")) {
-                        mcols(peaks_chr)[, col] <- NA
-                    }
+        # if there is no annotation for this chromosome, return peaks with NA annotations
+        myPeakList <- peaks_by_chr[[chr]]
+        TSS.ordered <- anno_by_chr[[chr]]
+        if (!chr %in% names(anno_by_chr) || length(TSS.ordered) == 0L) {
+            if (length(myPeakList) > 0L) {
+                myPeakList$peak <- names(myPeakList)
+                for (col in c("feature", "start_position", "end_position", 
+                            "feature_strand", "insideFeature", 
+                            "distancetoFeature", "shortestDistance",
+                            "fromOverlappingOrNearest")) {
+                    mcols(myPeakList)[, col] <- NA
                 }
-                return(peaks_chr)
             }
+            return(myPeakList)
+        }
     
         ### STEP1: Get nearest annotation for each peak
         ### Use distanceToNearest(query, subject, ignore.strand=T/F, select)
@@ -793,11 +796,11 @@ annotatePeakInBatch <-
         # what is the point to use arbitrary?
         nsel <- ifelse(select %in% c("all", "first", "last"), "all", "arbitrary")
 
-        featureGR <- .prepareFeatureLocations(anno_by_chr[[chr]], FeatureLocForDistance)
-        myPeaksGR <- .preparePeakLocations(myPeakList[[chr]], PeakLocForDistance)
+        featureGR <- .prepareFeatureLocations(TSS.ordered, FeatureLocForDistance)
+        myPeaksGR <- .preparePeakLocations(myPeakList, PeakLocForDistance)
         
-        dist <- .findOverlapsByOutput(myPeakList[[chr]], 
-                                      anno_by_chr[[chr]],
+        dist <- .findOverlapsByOutput(myPeakList, 
+                                      TSS.ordered,
                                       myPeaksGR, featureGR,
                                       output, maxgap,
                                       ignore.strand,

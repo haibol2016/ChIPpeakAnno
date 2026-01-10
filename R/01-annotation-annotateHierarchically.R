@@ -278,7 +278,7 @@ annotateHierarchically <- function(peaks,
     # Special Case 1: Bidirectional promoters for promoter-binding factors
     bdp_annotations <- GRanges()
     bdp_peaks <- character(0)
-    if (is_promoter_binding && "is_bidirectional_promoter" %in% colnames(mcols(combined_anno))) {
+    if (is_promoter_binding && "bidirectional_promoters" %in% colnames(mcols(combined_anno))) {
         bdp_mask <- mcols(combined_anno)$is_bidirectional_promoter == TRUE
         bdp_annotations <- combined_anno[bdp_mask]
         if (length(bdp_annotations) > 0L) {
@@ -536,6 +536,7 @@ applyMultipleStrategies <- function(peaks, annoData,
                     maxgap = 3000L,
                     FeatureLocForDistance = "TSS",
                     PeakLocForDistance = "middle",
+                    ignore.strand = TRUE,
                     select = "all"
                 )
             ),
@@ -545,7 +546,8 @@ applyMultipleStrategies <- function(peaks, annoData,
                 params = list(
                     bindingType = "fullRange",
                     bindingRegion = c(-1000L, 1000L),
-                    select = "all"
+                    select = "all",
+                    ignore.strand = TRUE
                 )
             ),
             list(
@@ -556,12 +558,13 @@ applyMultipleStrategies <- function(peaks, annoData,
                     maxgap = 10000L,
                     FeatureLocForDistance = "TSS",
                     PeakLocForDistance = "middle",
-                    select = "all"
+                    select = "first",
+                    ignore.strand = TRUE
                 )
             ),
             list(
-                name = "bidirectional",
-                method = "bidirectional_promoters",
+                name = "bidirectional_promoters",
+                method = "annotatePeaksNearBDP",
                 params = list(
                     maxTSSDistance = 1000L,
                     ignore.peak.strand = TRUE
@@ -575,7 +578,8 @@ applyMultipleStrategies <- function(peaks, annoData,
                     maxgap = 10000L,
                     FeatureLocForDistance = "TSS",
                     PeakLocForDistance = "middle",
-                    select = "all"
+                    select = "all",
+                    ignore.strand = TRUE
                 )
             )
         )
@@ -638,10 +642,18 @@ applyMultipleStrategies <- function(peaks, annoData,
                 ))
             } else if (method == "bidirectional_promoters") {
                 # Use bidirectional promoter detection
-                anno_result <- annotatePeaksNearBDP(peaks = peaks, annoData = annoData,
-                                                        maxTSSDistance = params$maxTSSDistance,
-                                                        ignore.peak.strand = params$ignore.peak.strand)
-                return(anno_result)
+                anno_result <- do.call(
+                    annotatePeaksNearBDP,
+                    c(list(peaks = peaks, annoData = annoData), params)
+                )
+                if (length(anno_result) > 0L) {
+                    anno_result$strategy_name <- strategy_name
+                }
+                return(list(
+                    annotations = anno_result,
+                    strategy_name = strategy_name,
+                    metadata = list(n_annotations = length(anno_result), n_unique_peaks = length(unique(anno_result$peak)))
+                ))
             } else {
                 warning("Unknown annotation method: ", method, 
                        " for strategy: ", strategy_name, call. = FALSE)
@@ -685,4 +697,3 @@ applyMultipleStrategies <- function(peaks, annoData,
     
     return(results)
 }
-

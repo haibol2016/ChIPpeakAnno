@@ -70,8 +70,8 @@
 #'                identifies candidate bidirectional promoters by finding pairs
 #'                of divergent genes (head-to-head) where their TSSs are within
 #'                \code{maxTSSDistance}, then (2) finds peaks whose centers are
-#'                within \code{maxPeakToBDPDistance} of the bidirectional promoter
-#'                centers. This matches the literature definition (Adachi et al.
+#'                overlapping with the bidirectional promoter regions.
+#'                This matches the literature definition (Adachi et al.
 #'                2007) where bidirectional promoters are shared promoter regions
 #'                between two divergently transcribed genes. Reports annotations
 #'                for both genes in each bidirectional promoter pair. Note:
@@ -89,8 +89,7 @@
 #'                Annotation regions are expanded by \code{bindingRegion}
 #'          \item \code{"nearestBiDirectionalPromoters"}: Uses distance-based
 #'                filtering (peak center to BDP center) instead of region expansion.
-#'                \code{bindingRegion} is ignored; use \code{maxTSSDistance} and
-#'                \code{maxPeakToBDPDistance} instead.
+#'                \code{bindingRegion} is ignored; use \code{maxTSSDistance} instead.
 #'          \item \code{"bothSidesNearest"} (deprecated): Peak regions are
 #'                expanded by \code{bindingRegion}
 #'        }
@@ -107,8 +106,7 @@
 #'        expanded region are considered for annotation.
 #'        
 #'        \strong{Note:} For \code{bindingType = "nearestBiDirectionalPromoters"},
-#'        this parameter is ignored. Use \code{maxTSSDistance} and
-#'        \code{maxPeakToBDPDistance} instead.
+#'        this parameter is ignored. Use \code{maxTSSDistance} instead.
 #' 
 #' @param ignore.peak.strand A logical value indicating whether to ignore peak
 #'        strand information when calculating distances. When \code{TRUE}
@@ -140,14 +138,6 @@
 #'        bidirectional promoter. Default is \code{1000L} (1kb). This parameter
 #'        is only used when \code{bindingType = "nearestBiDirectionalPromoters"}.
 #'        This determines which gene pairs form bidirectional promoters.
-#' 
-#' @param maxPeakToBDPDistance A single integer value specifying the maximum
-#'        distance (in base pairs) from peak center to bidirectional promoter
-#'        center for a peak to be considered "near" a bidirectional promoter.
-#'        Default is \code{200L} (200 bp). This parameter is only used when
-#'        \code{bindingType = "nearestBiDirectionalPromoters"}. This
-#'        distance-based filtering is more precise than overlap-based detection,
-#'        focusing on peaks actually centered near the bidirectional promoter.
 #' 
 #' @param ... Additional parameters (currently not used)
 #' 
@@ -365,7 +355,6 @@ annoPeaks <- function(peaks,
     }
     
     maxTSSDistance <- round(maxTSSDistance[1L])
-    maxPeakToBDPDistance <- round(maxPeakToBDPDistance[1L])
     if (bindingType[1] %in%
         # bothSidesNearest and bothSidesNSS are deprecated, but kept for
         # backward compatibility
@@ -444,13 +433,15 @@ annoPeaks <- function(peaks,
                 ignore.strand = FALSE
             )
         } else {
-            ## bindingType == "nearestBiDirectionalPromoters"
-            # New algorithm: First identify bidirectional promoters, then find peaks
-            # whose centers are within the bidirectional promoter regions
-            all_annotated_peaks <- annotatePeaksNearBDP(peaks = peaks, annoData = annoData,
-                                                        maxTSSDistance = maxTSSDistance,
-                                                        ignore.peak.strand = ignore.peak.strand)
-            return(all_annotated_peaks)
+            ##bindingType=="nearestBiDirectionalPromoters"
+            annotation <- promoters(annotation, 
+                                    upstream = -1 * bindingRegion[1],
+                                    downstream = bindingRegion[2])
+            ol <- findOverlaps(query = peaks, 
+                               subject = annotation,
+                               type = "any", 
+                               select = "all",
+                               ignore.strand = FALSE)
         }
     } else {
         # Expand annotation by bindingRegion upstream and downstream
@@ -615,114 +606,6 @@ annoPeaks <- function(peaks,
     peaks
 }
 
-#' Identify candidate bidirectional promoters
-#' 
-#' @description 
-#' Internal helper function to identify candidate bidirectional promoters by
-#' finding pairs of divergent genes (head-to-head) where their TSSs are within
-#' a specified distance threshold. This matches the literature definition
-#' (Adachi et al. 2007) where bidirectional promoters are shared promoter
-#' regions between two divergently transcribed genes.
-#' 
-#' @param annoData A \code{GRanges} or \code{annoGR} object containing
-#'   annotation data (genes, transcripts, or TSS positions). Must have strand
-#'   information.
-#' @param maxTSSDistance Integer. Maximum distance (in base pairs) between two
-#'   divergent TSSs to be considered a bidirectional promoter. Default is
-#'   \code{1000L} (1kb).
-#' @return A \code{GRanges} object containing bidirectional promoter regions.
-#'   Each element represents a bidirectional promoter region (the genomic
-#'   interval between two divergent TSSs). Metadata columns include:
-#'   \itemize{
-#'     \item \code{gene1_id}: ID/name of the first gene (from names or metadata)
-#'     \item \code{gene2_id}: ID/name of the second gene (from names or metadata)
-#'     \item \code{gene1_strand}: Strand of the first genae ("+" or "-")
-#'     \item \code{gene2_strand}: Strand of the second gene ("+" or "-")
-#'     \item \code{TSS1_pos}: TSS position of the first gene
-#'     \item \code{TSS2_pos}: TSS position of the second gene
-#'     \item \code{TSS_distance}: Distance between the two TSSs
-#'     \item \code{bdp_center}: Center coordinate of the bidirectional promoter region
-#'   }
-#' @details
-#' 
-#' \strong{Algorithm:}
-#' \enumerate{
-#'   \item Extract TSS positions from annotation (strand-aware: start for +,
-#'         end for -)
-#'   \item Find all pairs where one gene is on + strand and one on - strand
-#'   \item Calculate distance between TSSs
-#'   \item Filter to pairs where distance ≤ \code{maxTSSDistance}
-#'   \item Create bidirectional promoter regions (genomic interval between two divergent TSSs)
-#'   \item Calculate center coordinate of each bidirectional promoter region
-#' }
-#' 
-#' \strong{Note:} Distance calculation naturally handles cross-chromosome cases
-#' (infinite distance), so no explicit chromosome check is needed.
-#' 
-#' @author Haibo Liu
-#' @keywords internal
-#' @importFrom BiocGenerics start end strand
-.identifyBidirectionalPromoters <- function(annoData, maxTSSDistance = 1000L) {
-    stopifnot(inherits(annoData, c("GRanges", "annoGR")))
-    if (inherits(annoData, "annoGR")) {
-        annoData <- as(annoData, "GRanges")
-    }
-    stopifnot(is.numeric(maxTSSDistance))
-    maxTSSDistance <- round(maxTSSDistance[1L])
-    
-    # Extract TSS positions (strand-aware)
-    # For + strand: TSS is at start()
-    # For - strand: TSS is at end()
-    strand_vec <- as.character(strand(annoData))
-    
-    # Split by strand
-    plus_idx <- strand_vec == "+"
-    minus_idx <- strand_vec == "-"
-    
-    if (sum(plus_idx) == 0L || sum(minus_idx) == 0L) {
-        # No divergent pairs possible
-        return(GRanges())
-    }
-    
-    plus_anno_tss <- suppressWarnings(promoters(annoData[plus_idx], upstream = 0L, downstream = 1L))
-    minus_anno_tss <- suppressWarnings(promoters(annoData[minus_idx], upstream = 0L, downstream = 1L))  
-    minus_anno_tss_expanded <- suppressWarnings(promoters(annoData[minus_idx], upstream = maxTSSDistance, downstream = 0L))
-    
-    # Find all pairs of divergent TSSs
-    # For each chromosome, find pairs where + strand TSS is on the right side of - strand TSS
-    # and distance between them is <= maxTSSDistance using findOverlaps
-    ol <- findOverlaps(
-        query = plus_anno_tss,
-        subject = minus_anno_tss_expanded,
-        type = "any",
-        select = "all",
-        ignore.strand = TRUE
-    )
-    
-    if (length(ol) == 0L) { 
-        return(GRanges())
-    }
-    
-    plus_anno_tss <- plus_anno_tss[queryHits(ol)]
-    minus_anno_tss <- minus_anno_tss[subjectHits(ol)]
-
-    bdp <- suppressWarnings(GRanges(
-        seqnames = seqnames(plus_anno_tss),
-        IRanges(start = start(minus_anno_tss), end = start(plus_anno_tss)),
-        strand = "*",
-        feature1_id = names(plus_anno_tss),
-        feature2_id = names(minus_anno_tss),
-        feature1_strand = strand(plus_anno_tss),
-        feature2_strand = strand(minus_anno_tss),
-        TSS_distance = distance(plus_anno_tss, minus_anno_tss, ignore.strand = FALSE),
-        bdp_center = as.integer(round((start(minus_anno_tss) + start(plus_anno_tss)) / 2))
-    ))
-
-    list(bdp =bdp, 
-         bdp_plus_anno = annoData[plus_idx][queryHits(ol)], 
-         bdp_minus_anno = annoData[minus_idx][subjectHits(ol)])
-}
-
 ## Helper function to expand GRanges by binding region
 ## Expands ranges by b[1] upstream and b[2] downstream, strand-aware
 .expandGRangesByBindingRegion <- function(gr, bindingRegion) {
@@ -752,84 +635,4 @@ annoPeaks <- function(peaks,
     }
     end(gr) <- e1
     gr
-}
-
-
-annotatePeaksNearBDP <- function(peaks, annoData, 
-                                maxTSSDistance = 1000L, 
-                                ignore.peak.strand = TRUE) {
-    stopifnot(inherits(peaks, "GRanges"))
-    stopifnot(inherits(annoData, c("annoGR", "GRanges")))
-    stopifnot(is.numeric(maxTSSDistance))
-    stopifnot(is.logical(ignore.peak.strand))
-    maxTSSDistance <- round(maxTSSDistance[1L])
-    ignore.peak.strand <- as.logical(ignore.peak.strand[1L])
-    if (inherits(annoData, "annoGR")) {
-        annoData <- as(annoData, "GRanges")
-    }
-    if (ignore.peak.strand) {
-        peaks$peakstrand <- strand(peaks)
-        strand(peaks) <- "*"
-    }
-    if (is.null(names(peaks))) {
-        names(peaks) <- paste0("X", seq_along(peaks))
-    }
-    bdp_regions <- .identifyBidirectionalPromoters(annoData, maxTSSDistance)
-            
-    if (length(bdp_regions) == 0L) {
-        return(peaks)
-    }
-    
-    # find overlaps between peak centers and bdp
-    peak_centers <- as.integer(round((start(peaks) + end(peaks)) / 2))
-    peak_centers <- GRanges(seqnames = seqnames(peaks),
-                            IRanges(start = peak_centers, 
-                            end = peak_centers),
-                            strand = "*")
-    ol <- findOverlaps(peak_centers, 
-                        bdp_regions$bdp,
-                        type = "any", 
-                        select = "all", 
-                        ignore.strand = TRUE)
-    if (length(ol) == 0L) {
-        return(peaks)
-    }
-    peaks <- peaks[queryHits(ol)]
-    bdp_plus_anno <- bdp_regions$bdp_plus_anno[subjectHits(ol)]
-    bdp_minus_anno <- bdp_regions$bdp_minus_anno[subjectHits(ol)]
-    
-    # For bidirectional promoters, create annotations for both genes
-    # This bypasses the standard overlap filtering logic
-    # Create annotations for both genes
-    peak_gr1 <- peaks[queryHits(ol)]
-    peak_gr1$peak <- names(peaks)[queryHits(ol)]
-    peak_gr1$feature <- names(bdp_plus_anno)
-    peak_gr1$feature.ranges <- ranges(bdp_plus_anno)
-    peak_gr1$feature.strand <- strand(bdp_plus_anno)
-    peak_gr1$distance <- distance(peak_gr1, bdp_plus_anno, 
-                                    ignore.strand = FALSE)
-    peak_gr1$distanceToSite <- distance(peak_gr1, bdp_regions$bdp, 
-                                        ignore.strand = ignore.peak.strand)
-    relations1 <- getRelationship(peak_gr1, bdp_plus_anno)
-    peak_gr1$insideFeature <- relations1$insideFeature
-    mcols(peak_gr1) <- cbind(mcols(peak_gr1), mcols(bdp_plus_anno))
-    
-    peak_gr2 <- peaks[queryHits(ol)]
-    peak_gr2$peak <- names(peaks)[queryHits(ol)]
-    peak_gr2$feature <- names(bdp_minus_anno)
-    peak_gr2$feature.ranges <- ranges(bdp_minus_anno)
-    peak_gr2$feature.strand <- strand(bdp_minus_anno)
-    peak_gr2$distance <- distance(peak_gr2, bdp_minus_anno,
-                                    ignore.strand = FALSE)
-    peak_gr2$distanceToSite <- distance(peak_gr2, bdp_regions$bdp, 
-                                        ignore.strand = ignore.peak.strand)
-    relations2 <- getRelationship(peak_gr2, bdp_minus_anno)
-    peak_gr2$insideFeature <- relations2$insideFeature
-    mcols(peak_gr2) <- cbind(mcols(peak_gr2), mcols(bdp_minus_anno))
-    all_annotated_peaks <- c(peak_gr1, peak_gr2)
-    all_annotated_peaks <- all_annotated_peaks[order(seqnames(all_annotated_peaks),
-                                                    start(all_annotated_peaks),
-                                                    end(all_annotated_peaks))]
-
-    all_annotated_peaks
 }

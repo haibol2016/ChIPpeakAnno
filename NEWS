@@ -1,3 +1,109 @@
+CHANGES IN VERSION 3.45.3 (or next version)
+--------------------------------------------
+
+    o MAJOR DOCUMENTATION IMPROVEMENTS
+      - Comprehensive documentation updates across 50+ R files
+      - Enhanced parameter descriptions, examples, and usage guidance
+      - Added Details sections to all updated functions
+      - Improved clarity and accuracy of function documentation
+    
+    o BUG FIXES
+      - Fixed: Peaks on chromosomes without annotation are now kept with NA 
+        annotations instead of being silently removed (annotatePeakInBatch)
+      - Fixed: When no common seqlevels exist, all peaks are returned with NA 
+        annotations instead of empty GRanges (annotatePeakInBatch)
+    
+    o CODE IMPROVEMENTS
+      - Comprehensive code prettification across all modified files
+      - Consistent spacing, indentation, and formatting
+      - Fixed linter warnings (seq_len, seq_along, sequence, unused variables)
+      - Added missing import statements
+      - Fixed spacing and formatting in annoPeaks() for nearestBiDirectionalPromoters
+        binding type (promoters() and findOverlaps() calls)
+    
+    o NEW DOCUMENTATION
+      - Added Peak_Annotation_Prioritization_Strategies.md: Comprehensive guide
+        for custom peak annotation prioritization with strategies for different
+        factor types (TFs, histone marks, Pol II, RBPs, etc.)
+      - Clarified bidirectional promoter terminology (package vs. literature)
+      - Added literature references supporting prioritization strategies
+    
+    o DOCUMENTATION CLARIFICATIONS
+      - Clarified when annoPeaks() (Method 1) vs. internal logic (Method 2) is used
+      - Enhanced bidirectional promoter documentation with literature comparison
+      - Improved annotation method selection guidance
+    
+    o NEW FUNCTIONS
+      - annotateHierarchically(): Hierarchical annotation system that applies multiple
+        annotation strategies in parallel and prioritizes results based on factor-specific
+        binding patterns. Supports factor-specific prioritization for TFs, histone marks,
+        Pol II, RBPs, and other factor types. Provides comprehensive annotation from
+        multiple perspectives (promoters, gene bodies, intergenic regions, bidirectional
+        promoters).
+      - annotatePeaksNearBDP(): Lower-level function for annotating peaks near bidirectional
+        promoters. Returns a flat GRanges object with dual annotations (both genes in BDP
+        pairs). Designed for integration into hierarchical annotation pipelines.
+      - prioritizeAnnotations(): Main prioritization function that applies factor-specific
+        prioritization strategies to annotated peaks. Supports custom prioritization
+        functions or uses built-in strategies based on factor type.
+      - Factor-specific prioritization functions:
+        * prioritizeTFAnnotations(): Prioritization for transcription factors
+        * prioritizePromoterHistoneAnnotations(): For H3K4me3, H3K4me2, H3K27ac
+        * prioritizeGeneBodyHistoneAnnotations(): For H3K36me3
+        * prioritizeEnhancerHistoneAnnotations(): For enhancer-associated marks
+        * prioritizePolIIAnnotations(): For Pol II ChIP-seq
+        * prioritizeRBPAnnotations(): For RNA-binding proteins
+        * prioritizeIntergenicAnnotations(): For intergenic factors
+        * prioritizeThreeEndAnnotations(): For 3' end factors
+        * prioritizeExonSpecificAnnotations(): For exon-specific factors
+        * prioritizeIntronSpecificAnnotations(): For intron-specific factors
+        * prioritizeArchitecturalAnnotations(): For architectural features
+        * prioritizeChromatinRemodelerAnnotations(): For chromatin remodelers
+        * prioritizeMultiModalAnnotations(): For multimodal factors
+        * prioritizeNonCodingRNAAnnotations(): For non-coding RNA factors
+        * prioritizeRepetitiveElementAnnotations(): For repetitive element factors
+      - applyMultipleStrategies(): Helper function to apply multiple annotation strategies
+        in parallel and combine results.
+    
+    o NEW FUNCTION DOCUMENTATION
+      - Added comprehensive documentation for annotatePeaksNearBDP() function
+        - Complete parameter descriptions with usage guidance
+        - Detailed algorithm explanation (two-step process)
+        - Comparison with peaksNearBDP() function
+        - Examples demonstrating usage and output structure
+        - Explanation of dual annotation approach (both genes in BDP pairs)
+    
+    o CODE REORGANIZATION (December 2024)
+      - Reorganized R source files with functionality group prefixes for easier navigation:
+        - 00-data-*: Data objects and example datasets
+        - 00-deprecated.R: Deprecated functions
+        - 00-package.R: Package-level documentation
+        - 01-annotation-*: Core annotation functions
+        - 02-overlap-*: Overlap analysis functions
+        - 03-enrichment-*: Enrichment analysis functions
+        - 04-sequence-*: Sequence analysis functions
+        - 05-distribution-*: Distribution analysis functions
+        - 06-signal-*: Signal analysis functions
+        - 07-statistical-*: Statistical testing functions
+        - 08-conversion-*: Data conversion functions
+        - 09-visualization-*: Visualization functions
+        - 10-utilities-*: Utility functions
+      - Improved code organization and maintainability
+      - All file renames preserve git history
+    
+    o DATA OBJECT UPDATES (January 2025)
+      - Consolidated example peak datasets into peaksets.R
+      - Added new prebuilt annotation data objects (prebuilt.annodata.R)
+      - Added annotatedPeak.hotspot.EncodeTFBS.R: Example annotated peaks from ENCODE TFBS
+      - Updated data object documentation and examples
+    
+    o RECENT CODE FIXES (January 2025)
+      - Fixed spacing and formatting in annoPeaks() for nearestBiDirectionalPromoters
+        binding type (promoters() and findOverlaps() calls)
+      - Improved code consistency and readability
+    
+    See CHANGELOG_RECENT.md for detailed list of all changes.
+
 CHANGES IN VERSION 3.45.2
 -------------------------
 
