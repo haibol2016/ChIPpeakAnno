@@ -32,7 +32,6 @@ A list of annotation results, one per strategy. Each result is a
   list with:
   \itemize{
     \item \code{annotations}: \code{GRanges} object with annotations
-    \item \code{strategy_name}: Name of the strategy
     \item \code{metadata}: Additional information (overlap counts, etc.)
   }
 }

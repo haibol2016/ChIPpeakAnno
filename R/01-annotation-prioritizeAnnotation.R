@@ -54,7 +54,11 @@
                 seqnames = seqnames(annotated_peaks),
                 ranges = IRanges(start = start(annotated_peaks), end = end(annotated_peaks))
             )
-            feature_ranges <- mcols(annotated_peaks)$feature.ranges
+            feature_ranges <- GRanges(
+                seqnames = seqnames(annotated_peaks),
+                ranges = IRanges(start = start(mcols(annotated_peaks)$start_position), 
+                end = end(mcols(annotated_peaks)$end_position))
+            )
             if (inherits(feature_ranges, "GRanges")) {
                 return(.calculateJaccardIndex(peak_ranges, feature_ranges))
             }
@@ -116,7 +120,7 @@
 # Helper function: Apply Tier 3 - Overlap quality (Jaccard index)
 .applyOverlapScore <- function(annotated_peaks, weight) {
     jaccard <- .getJaccardIndex(annotated_peaks)
-    overlap_score <- ifelse(jaccard > 0, weight * jaccard, 0)
+    overlap_score <-  weight * jaccard
     annotated_peaks$priority_score <- 
         annotated_peaks$priority_score + overlap_score
     return(annotated_peaks)
@@ -136,11 +140,21 @@
             )
         } else {
             # Use priority mapping (weight is ignored if biotype_priority is provided)
-            biotype_score <- ifelse(
-                mcols(annotated_peaks)$gene_biotype %in% names(biotype_priority),
-                biotype_priority[mcols(annotated_peaks)$gene_biotype], 0
-            )
-            biotype_score[is.na(biotype_score)] <- 0
+            if ("gene_biotype" %in% colnames(mcols(annotated_peaks))) {
+                biotype_score <- ifelse(
+                    mcols(annotated_peaks)$gene_biotype %in% names(biotype_priority),
+                    biotype_priority[mcols(annotated_peaks)$gene_biotype], 0
+                )
+                biotype_score[is.na(biotype_score)] <- 0
+            } else if ("transcript_biotype" %in% colnames(mcols(annotated_peaks))) {
+                biotype_score <- ifelse(
+                    mcols(annotated_peaks)$transcript_biotype %in% names(biotype_priority),
+                    biotype_priority[mcols(annotated_peaks)$transcript_biotype], 0
+                )
+                biotype_score[is.na(biotype_score)] <- 0
+            } else {
+                stop("gene_biotype or transcript_biotype not found in annotated_peaks", call. = FALSE)
+            }
         }
         annotated_peaks$priority_score <- 
             annotated_peaks$priority_score + biotype_score
@@ -153,8 +167,9 @@
 #' @param annotated_peaks GRanges with annotations
 #' @param max_promoter_distance Maximum distance for promoter scoring
 #' @return GRanges with priority_score column
-#' @export
-prioritizeTFAnnotations <- function(annotated_peaks, max_promoter_distance = 3000L) {
+
+prioritizeTFAnnotations <- function(annotated_peaks,
+                                    max_promoter_distance = 3000L) {
     # Tier 1: Regulatory relationship (weight: 10000)
     feature_priority <- c(
         "overlapStart" = 10000,
@@ -180,7 +195,8 @@ prioritizeTFAnnotations <- function(annotated_peaks, max_promoter_distance = 300
     annotated_peaks <- .applyOverlapScore(annotated_peaks, weight = 100)
     
     # Tier 4: Feature type preference (weight: 10)
-    annotated_peaks <- .applyBiotypeBonus(annotated_peaks, biotype_priority = NULL, weight = 10)
+    annotated_peaks <- .applyBiotypeBonus(annotated_peaks, 
+                                          biotype_priority = NULL, weight = 10)
     
     return(annotated_peaks)
 }
@@ -191,7 +207,7 @@ prioritizeTFAnnotations <- function(annotated_peaks, max_promoter_distance = 300
 #' @param mark_type "H3K4me3" or "H3K4me2"
 #' @param max_promoter_distance Maximum distance for promoter scoring
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizePromoterHistoneAnnotations <- function(annotated_peaks,
                                                   mark_type = c("H3K4me3", "H3K4me2"),
                                                   max_promoter_distance = 3000L) {
@@ -243,10 +259,10 @@ prioritizePromoterHistoneAnnotations <- function(annotated_peaks,
 #' @param mark_type "H3K27ac" or "H3K4me1"
 #' @param max_enhancer_distance Maximum distance for enhancer scoring
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeEnhancerHistoneAnnotations <- function(annotated_peaks,
                                                    mark_type = c("H3K27ac", "H3K4me1"),
-                                                   max_enhancer_distance = 5000L) {
+                                                   max_enhancer_distance = 50000L) {
     mark_type <- match.arg(mark_type)
     
     # Tier 1: Enhancer relationship (weight: 10000)
@@ -308,7 +324,7 @@ prioritizeEnhancerHistoneAnnotations <- function(annotated_peaks,
 #' @param annotated_peaks GRanges with annotations
 #' @param mark_type "H3K36me3" or "H3K27me3"
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeGeneBodyHistoneAnnotations <- function(annotated_peaks,
                                                   mark_type = c("H3K36me3", "H3K27me3")) {
     mark_type <- match.arg(mark_type)
@@ -387,7 +403,7 @@ prioritizeGeneBodyHistoneAnnotations <- function(annotated_peaks,
 #' @param annotated_peaks GRanges with annotations
 #' @param sequencing_method "ChIP-seq", "GRO-seq", or "PRO-seq"
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizePolIIAnnotations <- function(annotated_peaks,
                                         sequencing_method = c("ChIP-seq", "GRO-seq", "PRO-seq")) {
     sequencing_method <- match.arg(sequencing_method)
@@ -441,7 +457,7 @@ prioritizePolIIAnnotations <- function(annotated_peaks,
 #' @param sequencing_method "ChIP-seq", "CLIP-seq", "iCLIP", or "eCLIP"
 #' @param use_transcript_level Logical, prefer transcript-level annotation
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeRBPAnnotations <- function(annotated_peaks,
                                        sequencing_method = c("ChIP-seq", "CLIP-seq", "iCLIP", "eCLIP"),
                                        use_transcript_level = TRUE) {
@@ -501,7 +517,7 @@ prioritizeRBPAnnotations <- function(annotated_peaks,
 #' @param annotated_peaks GRanges with annotations
 #' @param max_tes_distance Maximum distance to TES
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeThreeEndAnnotations <- function(annotated_peaks, max_tes_distance = 3000L) {
     # Tier 1: 3' end relationship (weight: 10000)
     feature_priority <- c(
@@ -539,7 +555,7 @@ prioritizeThreeEndAnnotations <- function(annotated_peaks, max_tes_distance = 30
 #' 
 #' @param annotated_peaks GRanges with annotations
 #' @return GRanges with priority_score column
-#' @export  
+ 
 prioritizeExonSpecificAnnotations <- function(annotated_peaks) {
     # Tier 1: Exon relationship (weight: 10000)
     feature_priority <- c(
@@ -571,7 +587,7 @@ prioritizeExonSpecificAnnotations <- function(annotated_peaks) {
 #' 
 #' @param annotated_peaks GRanges with annotations
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeIntronSpecificAnnotations <- function(annotated_peaks) {
     # Tier 1: Intron relationship (weight: 10000)
     feature_priority <- c(
@@ -603,7 +619,7 @@ prioritizeIntronSpecificAnnotations <- function(annotated_peaks) {
 #' 
 #' @param annotated_peaks GRanges with annotations
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeArchitecturalAnnotations <- function(annotated_peaks) {
     # Tier 1: Relationship type (weight: 10000)
     feature_priority <- c(
@@ -628,7 +644,7 @@ prioritizeArchitecturalAnnotations <- function(annotated_peaks) {
 #' 
 #' @param annotated_peaks GRanges with annotations
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeNonCodingRNAAnnotations <- function(annotated_peaks) {
     # Tier 1: Relationship type (weight: 10000)
     feature_priority <- c(
@@ -663,7 +679,7 @@ prioritizeNonCodingRNAAnnotations <- function(annotated_peaks) {
 #' 
 #' @param annotated_peaks GRanges with annotations
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeRepetitiveElementAnnotations <- function(annotated_peaks) {
     # Tier 1: Relationship type (weight: 10000)
     feature_priority <- c(
@@ -698,7 +714,7 @@ prioritizeRepetitiveElementAnnotations <- function(annotated_peaks) {
 #' @param annotated_peaks GRanges with annotations
 #' @param max_intergenic_distance Maximum distance for intergenic scoring
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeIntergenicAnnotations <- function(annotated_peaks, max_intergenic_distance = 50000L) {
     # Tier 1: Intergenic relationship (weight: 10000)
     feature_priority <- c(
@@ -733,7 +749,7 @@ prioritizeIntergenicAnnotations <- function(annotated_peaks, max_intergenic_dist
 #' 
 #' @param annotated_peaks GRanges with annotations
 #' @return GRanges with priority_score column
-#' @export
+#' 
 prioritizeChromatinRemodelerAnnotations <- function(annotated_peaks) {
     # Tier 1: Relationship type (weight: 5000, less important)
     feature_priority <- c(
@@ -772,7 +788,7 @@ prioritizeChromatinRemodelerAnnotations <- function(annotated_peaks) {
 #' @param annotated_peaks GRanges with annotations
 #' @param ... Additional parameters
 #' @return GRanges with priority_score column
-#' @export
+
 prioritizeMultiModalAnnotations <- function(annotated_peaks) {
     # For multimodal factors, use a balanced approach
     # Tier 1: Relationship type (weight: 10000)

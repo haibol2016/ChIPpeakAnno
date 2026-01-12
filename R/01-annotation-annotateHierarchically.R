@@ -228,7 +228,15 @@ annotateHierarchically <- function(peaks,
                  call. = FALSE)
         }
     }
-      
+
+    if (is.null(BPPARAM)) {
+        if (requireNamespace("BiocParallel", quietly = TRUE)) {
+            BPPARAM <- BiocParallel::bpparam()
+        } else {
+            BPPARAM <- NULL  # Will use sequential processing below
+        }
+    }
+
     # Step 2: Apply multiple annotation strategies in parallel
     message("Applying multiple annotation strategies...")
     strategy_results <- applyMultipleStrategies(peaks, annoData, 
@@ -454,7 +462,6 @@ annotateHierarchically <- function(peaks,
 #'   list with:
 #'   \itemize{
 #'     \item \code{annotations}: \code{GRanges} object with annotations
-#'     \item \code{strategy_name}: Name of the strategy
 #'     \item \code{metadata}: Additional information (overlap counts, etc.)
 #'   }
 #' @details
@@ -606,7 +613,6 @@ applyMultipleStrategies <- function(peaks, annoData,
                 
                 return(list(
                     annotations = anno_result,
-                    strategy_name = strategy_name,
                     metadata = list(
                         n_annotations = length(anno_result),
                         n_unique_peaks = if (length(anno_result) > 0L && "peak" %in% colnames(mcols(anno_result))) {
@@ -630,7 +636,6 @@ applyMultipleStrategies <- function(peaks, annoData,
                 
                 return(list(
                     annotations = anno_result,
-                    strategy_name = strategy_name,
                     metadata = list(
                         n_annotations = length(anno_result),
                         n_unique_peaks = if (length(anno_result) > 0L && "peak" %in% colnames(mcols(anno_result))) {
@@ -651,7 +656,6 @@ applyMultipleStrategies <- function(peaks, annoData,
                 }
                 return(list(
                     annotations = anno_result,
-                    strategy_name = strategy_name,
                     metadata = list(n_annotations = length(anno_result), n_unique_peaks = length(unique(anno_result$peak)))
                 ))
             } else {
@@ -659,7 +663,6 @@ applyMultipleStrategies <- function(peaks, annoData,
                        " for strategy: ", strategy_name, call. = FALSE)
                 return(list(
                     annotations = GRanges(),
-                    strategy_name = strategy_name,
                     metadata = list(n_annotations = 0L, n_unique_peaks = 0L)
                 ))
             }
@@ -679,7 +682,7 @@ applyMultipleStrategies <- function(peaks, annoData,
         if (requireNamespace("BiocParallel", quietly = TRUE)) {
             BPPARAM <- BiocParallel::bpparam()
         } else {
-            BPPARAM <- BiocParallel::SerialParam()
+            BPPARAM <- NULL  # Will use sequential processing below
         }
     }
     

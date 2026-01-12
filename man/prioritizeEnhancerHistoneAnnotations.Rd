@@ -7,7 +7,7 @@
 prioritizeEnhancerHistoneAnnotations(
   annotated_peaks,
   mark_type = c("H3K27ac", "H3K4me1"),
-  max_enhancer_distance = 5000L
+  max_enhancer_distance = 50000L
 )
 }
 \arguments{

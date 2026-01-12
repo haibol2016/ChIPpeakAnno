@@ -7,7 +7,7 @@
 annotatePeakInBatch(
   myPeakList,
   mart,
-  featureType = c("TSS", "Exon"),
+  featureType = c("TSS", "Exon", "5utr", "3utr", "transcript", "ExonPlusUtr"),
   AnnotationData,
   output = c("nearestLocation", "overlapping", "both", "shortestDistance", "inside",
     "upstream&inside", "inside&downstream", "upstream", "downstream",
@@ -36,16 +36,17 @@ is not supplied. If both \code{mart} and \code{AnnotationData} are provided,
 is not provided. See \code{\link[biomaRt]{useMart}} for details.}
 
 \item{featureType}{A character vector specifying the type of annotation to
-retrieve when using \code{mart} and \code{AnnotationData} is not
-supplied. Options are "TSS" (transcription start sites) or "Exon" 
-(exonic regions). Note: "Exon" retrieves exon annotations, which
-may include multiple exons per gene. (why exon? why not use gene? or transcript?)}
+retrieve when using \code{mart} and \code{getAnnotation()} when 
+\code{AnnotationData} is not provided. Options are "TSS" (transcription start sites), 
+"Exon" (exonic regions), "5utr" (5' untranslated regions), "3utr" (3' untranslated regions), 
+"transcript" (transcripts), "ExonPlusUtr" (exonic regions plus untranslated regions). 
+Note: "Exon" retrieves exon annotations, which may include multiple exons per gene.
+See \code{\link{getAnnotation}} for details.}
 
 \item{AnnotationData}{A \link[GenomicRanges:GRanges-class]{GRanges} or
 \code{\link{annoGR}} object. It can be the output from the function 
 \code{\link{getAnnotation}} or a customized annotation of class
-\code{\link[GenomicRanges]{GRanges}} with additional variable:
-\code{strand} (1 or + for positive strand and -1 or - for negative strand). 
+\code{\link[GenomicRanges]{GRanges}} with additional metadata columns. 
 This parameter takes precedence over \code{mart}.}
 
 \item{output}{A character, specifying what type of features meeting annotation
@@ -59,7 +60,7 @@ criteria should be output. Available options are:
         returns both non-overlapping and overlapping features, as long as they
         have the minimum distance to the peak.}
   \item{overlapping}{Outputs all features that overlap with peak regions, where
-        overlap is defined as having a gap less than or equal to \code{maxgap}
+        overlap is defined as having a gap (computed by \code{distance()}) not greater than \code{maxgap}
         between the peak and feature boundaries. A peak may be annotated with
         zero features (NA will be returned), one feature, or multiple features
         depending on the number of overlapping features found.}
@@ -83,7 +84,7 @@ criteria should be output. Available options are:
         combines upstream and overlapping annotations to capture regulatory
         elements in the promoter region and gene body.}
   \item{inside&downstream}{Outputs all features where peaks are located either
-        downstream of the feature's gene 3' end (within \code{maxgap}) or overlapping
+        downstream of the feature's  3' end (within \code{maxgap}) or overlapping
         with the feature region. Specifically, this finds peaks that overlap
         with a region extending from the feature start through \code{maxgap}
         base pairs downstream of the feature's gene 3' end. This option requires
@@ -98,15 +99,21 @@ criteria should be output. Available options are:
         of the feature's gene end, within the distance specified by
         \code{maxgap}. This captures 3' regulatory elements and downstream
         enhancers.}
-  \item{upstreamORdownstream}{Outputs all features that are either upstream
-        of TSS (within \code{maxgap}) or downstream of gene end (within
-        \code{maxgap}). This option captures regulatory elements in both
-        directions from the gene boundaries.}
+  \item{upstreamORdownstream}{Outputs all features where there are peaks 
+        that are either upstream of TSS (within \code{maxgap}) or downstream 
+        of gene end (within \code{maxgap}). This option captures regulatory 
+        elements in both directions from the gene boundaries.}
+  \item{upstream2downstream}{Outputs all features where there are peaks 
+        that are anywhere bwteeen upstream of TSS (within \code{maxgap}) and 
+        downstream of gene end (within \code{maxgap}). This option captures 
+        regulatory elements in both directions from the gene boundaries.}
   \item{nearestBiDirectionalPromoters}{Uses \code{\link{annoPeaks}} to
-        annotate peaks. It will report bidirectional promoters if there are
-        promoters in both directions in the given region (defined by
-        \code{bindingRegion}). Otherwise, it will report the closest
-        promoter in one direction.}
+        annotate peaks. It will report two features associated with bidirectional 
+        promoters if there are peaks in the given region defined by \code{bindingRegion}. 
+        Otherwise, it will report the closest promoter in one direction. 
+        Note: Here the definition of bidirectional promoters is different from 
+        the definition in the literature (Adachi et al. 2007). 
+        See \code{\link{annoPeaks}} for details.}
 }}
 
 \item{multiple}{A logical parameter kept for backward compatibility.
@@ -184,13 +191,11 @@ Note: This parameter only affects the \code{"overlapping"} and
 feature is always returned regardless of this setting.}
 
 \item{ignore.strand}{A logical indicating whether strand information should
-be ignored when finding overlaps and calculating distances. When
-\code{TRUE} (default), peaks are matched to features regardless of
-strand, which is appropriate for most ChIP-seq experiments where
-peaks are not strand-specific. Set to \code{FALSE} only if you have
-stranded peaks (e.g., from strand-specific RNA-seq or certain
-transcription factor binding assays) and want to match peaks only
-to features on the same strand.}
+be ignored when finding overlaps by \code{findOverlaps()} and 
+nearest distance by \code{nearest()}. When \code{TRUE} (default), 
+peaks are matched to features regardless of strand, which is 
+appropriate for most ChIP-seq experiments where peaks are not 
+strand-specific.}
 
 \item{bindingRegion}{A vector with two integer values specifying relative
 offsets (in base pairs) from the feature's reference point to define
@@ -293,7 +298,8 @@ metadata columns:
 \description{
 This function annotates a set of peak regions (e.g., from ChIP-seq, ATAC-seq)
 by finding their relationships to genomic features such as genes, transcription
-start sites (TSS), or exons. It calculates distances, identifies overlaps,
+start sites (TSS), exons, 5' untranslated regions (5'UTR), 3' untranslated regions (3'UTR), 
+and transcripts. It calculates distances, identifies overlaps,
 and determines spatial relationships (upstream, downstream, inside, etc.)
 between peaks and features.
 }
