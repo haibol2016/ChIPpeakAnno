@@ -2,6 +2,73 @@
 
 This document provides visual diagrams explaining how each `output` mode works in the `annotatePeakInBatch` function.
 
+## Table of Contents
+
+### Key Concepts
+- [Reference Points](#reference-points)
+- [Diagram Legend](#diagram-legend)
+
+### Detailed Parameter Explanations
+- [1. `PeakLocForDistance` - Reference Point in Peak](#1-peaklocfordistance---reference-point-in-peak)
+  - [`PeakLocForDistance = "start"` (Default)](#peaklocfordistance--start-default)
+  - [`PeakLocForDistance = "middle"` (Recommended)](#peaklocfordistance--middle-recommended-for-variable-width-peaks)
+  - [`PeakLocForDistance = "end"`](#peaklocfordistance--end)
+  - [`PeakLocForDistance = "endMinusStart"` (Strand-aware)](#peaklocfordistance--endminusstart-strand-aware)
+- [2. `FeatureLocForDistance` - Reference Point in Feature](#2-featurelocfordistance---reference-point-in-feature)
+  - [`FeatureLocForDistance = "TSS"` (Default, Recommended)](#featurelocfordistance--tss-default-recommended)
+  - [`FeatureLocForDistance = "geneEnd"`](#featurelocfordistance--geneend)
+  - [`FeatureLocForDistance = "start"`](#featurelocfordistance--start)
+  - [`FeatureLocForDistance = "end"`](#featurelocfordistance--end)
+  - [`FeatureLocForDistance = "middle"`](#featurelocfordistance--middle)
+- [3. `maxgap` - Maximum Gap Allowed](#3-maxgap---maximum-gap-allowed)
+  - [`maxgap = -1L` (Default - No Gap Allowed)](#maxgap--1l-default---no-gap-allowed)
+  - [`maxgap = 0L` (Allow Adjacent)](#maxgap--0l-allow-adjacent)
+  - [`maxgap = 1000L` (Allow 1kb Gap)](#maxgap--1000l-allow-1kb-gap)
+  - [`maxgap = 5000L` (Allow 5kb Gap)](#maxgap--5000l-allow-5kb-gap)
+- [4. `bindingRegion` - Region Expansion Offsets](#4-bindingregion---region-expansion-offsets)
+- [5. `bindingType` - Region Definition Strategy](#5-bindingtype---region-definition-strategy)
+  - [`bindingType = "startSite"` (TSS-based)](#bindingtype--startsite-tss-based)
+  - [`bindingType = "endSite"` (Gene End-based)](#bindingtype--endsite-gene-end-based)
+  - [`bindingType = "fullRange"` (Full Gene Range)](#bindingtype--fullrange-full-gene-range)
+  - [`bindingType = "nearestBiDirectionalPromoters"` (Bidirectional Promoters)](#bindingtype--nearestbidirectionalpromoters-bidirectional-promoters)
+
+### Output Mode Diagrams
+- [1. `output = "nearestLocation"` (Default)](#1-output--nearestlocation-default)
+- [2. `output = "overlapping"`](#2-output--overlapping)
+- [3. `output = "both"`](#3-output--both)
+- [4. `output = "shortestDistance"`](#4-output--shortestdistance)
+- [5. `output = "inside"`](#5-output--inside)
+- [6. `output = "upstream&inside"`](#6-output--upstreaminside)
+- [7. `output = "inside&downstream"`](#7-output--insidedownstream)
+- [8. `output = "upstream"`](#8-output--upstream)
+- [9. `output = "downstream"`](#9-output--downstream)
+- [10. `output = "upstreamORdownstream"`](#10-output--upstreamordownstream)
+- [11. `output = "upstream2downstream"`](#11-output--upstream2downstream)
+- [12. `output = "nearestBiDirectionalPromoters"`](#12-output--nearestbidirectionalpromoters)
+
+### Combined Examples
+- [Example 1: `nearestLocation` with Reference Points](#example-1-nearestlocation-with-reference-points)
+- [Example 2: `overlapping` with maxgap](#example-2-overlapping-with-maxgap)
+- [Example 3: `upstream` with maxgap and FeatureLocForDistance](#example-3-upstream-with-maxgap-and-featurelocfordistance)
+
+### Parameter Interactions
+- [When `maxgap` is Used](#when-maxgap-is-used)
+- [When Reference Points are Used](#when-reference-points-are-used)
+
+### Quick Reference
+- [Quick Reference Table](#quick-reference-table)
+
+### Example Scenarios
+- [Scenario 1: Standard Promoter Analysis](#scenario-1-standard-promoter-analysis)
+- [Scenario 2: Find Nearest Gene](#scenario-2-find-nearest-gene)
+- [Scenario 3: Upstream Enhancers](#scenario-3-upstream-enhancers)
+- [Scenario 4: Bidirectional Promoters](#scenario-4-bidirectional-promoters)
+
+### Additional Information
+- [Notes](#notes)
+
+---
+
 ## Key Concepts
 
 ### Reference Points
@@ -88,12 +155,13 @@ Peak:       [+++++++++++++] (start=100, end=300, middle=200)
             ↑ (if feature is - strand)
 ```
 
-**When is it used?**
+**When is `FeatureLocForDistance` used or NOT used?**
 - Used in `output = "nearestLocation"` for distance calculation
 - Used in `output = "both"` (for the nearestLocation part)
 - Used when calculating `distancetoFeature` in output metadata
 - **NOT used** in `output = "overlapping"` (uses boundaries instead)
 - **NOT used** in `output = "shortestDistance"` (uses boundaries instead)
+- **NOT used** in `output = "inside"` (uses boundary containment instead)
 
 ---
 
@@ -183,7 +251,7 @@ Gene: [5'======================3'] (start=1000, end=5000, middle=3000, TSS=1000,
 "middle":          ↑ (position 3000) - NOT strand-aware
 ```
 
-**When is it used?**
+**When is `FeatureLocForDistance used or NOT used`?**
 - Used in `output = "nearestLocation"` for distance calculation
 - Used in `output = "both"` (for the nearestLocation part)
 - Used in `output = "upstream"`, `"downstream"`, `"upstream&inside"`, `"inside&downstream"` to define regions
@@ -191,6 +259,7 @@ Gene: [5'======================3'] (start=1000, end=5000, middle=3000, TSS=1000,
 - Used to determine `bindingType` when `bindingRegion` triggers `annoPeaks()`
 - **NOT used** in `output = "overlapping"` (uses boundaries instead)
 - **NOT used** in `output = "shortestDistance"` (uses boundaries instead)
+- **NOT used** in `output = "inside"` (uses boundary containment instead)
 
 ---
 
@@ -315,6 +384,7 @@ maxgap = 500: ✓ Returns (gap = 200 ≤ 500)
 - ✅ Used in `output = "upstream2downstream"` - both directions
 - ❌ **NOT used** in `output = "nearestLocation"` - uses reference point distances only
 - ❌ **NOT used** in `output = "shortestDistance"` - uses `nearest()` function
+- ❌ **NOT used** in `output = "inside"` - uses `type = "within"` (strict containment)
 - ❌ **NOT used** in `output = "nearestBiDirectionalPromoters"` - uses `bindingRegion` instead
 
 **Important Notes**:
@@ -332,43 +402,331 @@ maxgap = 500: ✓ Returns (gap = 200 ≤ 500)
 
 ---
 
-## Combined Example: How Parameters Work Together
+### 4. `bindingRegion` - Region Expansion Offsets
 
-### Example 1: `nearestLocation` with Reference Points
+**Purpose**: Defines a region around features by specifying upstream and downstream offsets from a reference point. When provided, triggers the `annoPeaks()` annotation method (region-based) instead of the internal point-based method.
+
+**Format**: A vector with two integer values: `c(upstream_offset, downstream_offset)`
+
+**Requirements**:
+- First value: Upstream offset (must be ≤ 0, typically negative)
+- Second value: Downstream offset (must be ≥ 1, typically positive)
+- Example: `c(-5000, 3000)` means 5kb upstream and 3kb downstream
+
+**How It Works**:
 ```
-Peak: [1000, 1500]
-Feature: [5'==========3'] (start=2000, end=5000, TSS=2000)
-
-PeakLocForDistance = "middle" → Peak reference = 1250
-FeatureLocForDistance = "TSS" → Feature reference = 2000
-
-Distance = |1250 - 2000| = 750 bp
-
-Result: ✓ Returns this feature (if it's the nearest)
-```
-
-### Example 2: `overlapping` with maxgap
-```
-Peak: [1000, 1500]
-             Feature: [5'==========3'] (start=2000, end=5000)
-
-Gap = max(1000, 2000) - min(1500, 5000) = 2000 - 1500 = 500 bp
-
-maxgap = 1000: ✓ Returns (gap 500 ≤ maxgap 1000)
-maxgap = 200:  ✗ Does not return (gap 500 > maxgap 200)
+Reference Point (TSS or geneEnd)
+        ↑
+        |
+[upstream_offset]  [feature reference]  [downstream_offset]
+        |               ↑              |
+        |<--negative-->||<--positive-->|
+        
+Example: bindingRegion = c(-5000, 3000)
+         Creates region: [TSS - 5000] to [TSS + 3000]
 ```
 
-### Example 3: `upstream` with maxgap and FeatureLocForDistance
+**Visual Example for Positive Strand Gene**:
 ```
-Peak: [500, 800]
-                  Feature: [5'==========3'] (start=2000, end=5000, TSS=2000)
+Original Feature:
+[5'==========3'] (start=10000, end=15000, TSS=10000)
 
-FeatureLocForDistance = "TSS" → TSS = 2000
-Peak end = 800
-Distance from peak end to TSS = 2000 - 800 = 1200 bp
+bindingRegion = c(-2000, 500):
+           [5'==========3']
+            ↑
+           TSS
+|<-2000bp->|               |<500bp>|
+[Expanded Region: 8000 to 10500]
+   [++++++] Peak
+[5'-----------==========-----3']          
+    Expanded annotation region
+    (peaks overlapping this region will be annotated)
+```
 
-maxgap = 2000: ✓ Returns (peak is upstream, distance 1200 ≤ maxgap 2000)
-maxgap = 1000: ✗ Does not return (distance 1200 > maxgap 1000)
+**Visual Example for Negative Strand Gene**:
+```
+Original Feature:
+[3'==========5'] (start=10000, end=15000, TSS=15000)
+
+bindingRegion = c(-2000, 500):
+               [3'==========5']
+                            ↑
+                           TSS
+        |<500bp>|              |<--2000bp-->|
+        [Expanded Region: 14500 to 17000]
+                                 [+++++++] Peak
+        [3'--------==========---------------5'] 
+           Expanded annotation region
+```
+
+**When `bindingRegion` Triggers `annoPeaks()`**:
+```
+Conditions:
+1. bindingRegion length > 1 (i.e., has 2 values)
+2. bindingType can be determined (either provided or auto-determined)
+
+When BOTH conditions are met:
+  → Uses annoPeaks() function (Method 1: region-based)
+  → maxgap is IGNORED
+  → Annotation regions are expanded by bindingRegion
+
+When conditions NOT met:
+  → Uses internal logic (Method 2: point-based)
+  → bindingRegion is IGNORED
+  → maxgap is used instead
+```
+
+**Common Use Cases**:
+```
+1. Promoter analysis:
+   bindingRegion = c(-2000, 500)
+   bindType = "startSite"
+   → 2kb upstream to 500bp downstream of TSS
+
+2. Full gene range with flanking:
+   bindingRegion = c(-5000, 5000)
+   bindingType = "fullRange"
+   → 5kb upstream to 5kb downstream of entire gene
+```
+
+**Important Notes**:
+1. **Method Selection**: When `bindingRegion` is provided and `bindingType` is determined and valid, annotation switches to `annoPeaks()` which uses region expansion + overlap detection, not point-to-point distances.
+
+2. **Auto-determination of bindingType**: If not explicitly provided, `bindingType` is determined from:
+   - `output = "nearestBiDirectionalPromoters"` → `bindingType = "nearestBiDirectionalPromoters"`
+   - `output = "overlapping"` and `FeatureLocForDistance = "TSS"` → `bindingType = "startSite"`
+   - `output = "overlapping"` and `FeatureLocForDistance = "geneEnd"` → `bindingType = "endSite"`
+
+3. **Interaction with other parameters**:
+   - When `bindingRegion` is set and `bindingType` is determined: `maxgap` is ignored
+   - `output` must be "overlapping" or "nearestBiDirectionalPromoters" for auto-determination; 
+   `bindingType` should be explicitly defined for other output modes to trigger `annoPeaks()` for peak annotation.
+
+---
+
+### 5. `bindingType` - Region Definition Strategy
+
+**Purpose**: Specifies how the binding region is defined relative to features. Determines which reference point is used and how region expansion is constrained. Only used when `bindingRegion` triggers `annoPeaks()`.
+
+**Options**:
+
+#### `bindingType = "startSite"` (TSS-based)
+
+**Description**: Defines binding region relative to the feature start site (TSS for positive strand, gene end for negative strand). Annotation regions are expanded by `bindingRegion`, but downstream expansion is **constrained to not exceed original feature boundaries**.
+
+**Visual Example (Positive Strand)**:
+```
+Original Feature:
+               [5'=======================3'] (start=10000, end=15000, TSS=10000)
+
+bindingRegion = c(-2000, 5000):
+               [5'======================3']
+               ↑
+              TSS
+  |<--2000bp-->|<------5000bp---------->|
+    [Expanded Region: 8000 to 15000]
+[+++++++]
+  [5'----------------------------------3']  Expanded annotation region
+               ↑ 
+               TSS
+    (downstream expansion stops at gene end)
+```
+
+**Visual Example (Negative Strand)**:
+```
+Original Feature:
+            [3'=======================5'] (start=10000, end=15000, TSS=15000)
+
+bindingRegion = c(-2000, 5000):
+            [3'=======================5']
+                                     ↑
+                                     TSS
+            |<------------5000bp---->|<--2000bp--->|
+            [5'----------------------------------3']  Expanded annotation region 
+                [Expanded Region: 10000 to 17000]
+                                              [+++++++] Peak
+           (downstream expansion stops at gene start)
+```
+
+**Key Characteristics**:
+- Uses TSS as reference point (strand-aware)
+- Downstream expansion constrained by original feature boundaries
+- Best for promoter-proximal binding analysis
+- Auto-determined when: `output = "overlapping"` + `FeatureLocForDistance = "TSS"`
+
+---
+
+#### `bindingType = "endSite"` (Gene End-based)
+
+**Description**: Defines binding region relative to the feature end site (gene end for positive strand, TSS for negative strand). Annotation regions are expanded by `bindingRegion`, but upstream expansion is constrained to not exceed original feature boundaries.
+
+**Visual Example (Positive Strand)**:
+```
+Original Feature:
+                       [5'===============3'] (start=10000, end=15000, geneEnd=15000)
+
+bindingRegion = c(-5000, 3000):
+                       [5'===============3']
+                                        ↑
+                                      geneEnd
+                         |<-- 5000bp--->|<-3000bp-->|
+                       [Expanded Region: 10000 to 18000]
+                      [5'----------------------------3']
+                                                 [+++++++] Peak
+                                        ↑
+                                      geneEnd         
+           (upstream expansion stops at gene start)
+```
+
+**Visual Example (Negative Strand)**:
+```
+
+Original Feature:
+                       [3'===============5'] (start=10000, end=15000, geneEnd=15000)
+
+bindingRegion = c(-5000, 3000):
+                       [3'===============5']
+                          ↑
+                        geneEnd
+           |<-- 3000bp--->|<----5000bp-->|
+          [Expanded Region: 10000 to 18000]
+          [3'----------------------------5']
+        [+++++++] Peak
+                          ↑
+                        geneEnd         
+           (upstream expansion stops at gene start)
+```
+
+**Key Characteristics**:
+- Uses gene end as reference point (strand-aware)
+- Upstream expansion constrained by original feature boundaries
+- Best for 3' end regulatory element analysis
+- Auto-determined when: `output = "overlapping"` + `FeatureLocForDistance = "geneEnd"`
+
+---
+
+#### `bindingType = "fullRange"` (Full Gene Range)
+
+**Description**: Uses the entire feature range. Annotation regions are expanded by `bindingRegion` in both directions **without constraints**. This allows expansion beyond original feature boundaries.
+
+**Visual Example**:
+```
+Original Feature:
+                [5'==========3'] (start=10000, end=15000)
+
+bindingRegion = c(-5000, 5000):
+                [5'==========3']
+     |<--5000bp-->|         |<5000bp-->|
+     |<-----------===========--------->|
+       [Expanded Region: 5000 to 20000]
+  [+++++++]                  [+++++++]
+```
+
+**Key Characteristics**:
+- Uses entire feature range as base
+- Expansion in both directions without constraints
+- Best for gene body analysis or when you need flanking regions
+- Must be explicitly provided (not auto-determined)
+
+**Use Cases**:
+- Histone marks that span gene bodies (H3K36me3, H3K27me3)
+- Full transcript analysis with flanking regions
+- When you need symmetric expansion around entire gene
+
+---
+
+#### `bindingType = "nearestBiDirectionalPromoters"` (Bidirectional Promoters)
+
+**Description**: Identifies peaks near bidirectional promoters using a two-step algorithm.
+
+**Visual Example**:
+```
+Gene Pair (Divergent):
+                  [++++]  [5'==========3']
+[3'==========5'] 
+   Gene1 (rev)     peak      Gene2 (forward)
+        ↑                      ↑
+       TSS1                   TSS2
+        
+Bidirectional Promoter Region:
+                        [5'==========3']
+[3'==========5']                     
+      Gene1                 Gene2
+           [<--promoter region-->]
+                  [++++] Peak
+peak overlaps with bidirectional promoter region
+✓ Returns annotations for BOTH Gene1 and Gene2
+```
+
+**Key Characteristics**:
+- Reports annotations for **both genes** in bidirectional promoter pairs
+- `select = "bestOne"` is not supported (always keeps both genes)
+- Auto-determined when: `output = "nearestBiDirectionalPromoters"`
+
+**Algorithm Steps**:
+1. Create promoter regions using `promoters()` with `bindingRegion` as upstream/downstream distances
+2. Find peaks overlapping with the expaned promoter regions
+3. Return annotations for both genes if bidirectional promoters exist for a peak; otherwise return the feature whose expanded promoter overlap with peak. 
+
+---
+
+**Summary Table: `bindingType` Options**
+
+| bindingType | Reference Point | Expansion Constraints | Best For | Auto-Determined? |
+|------------|----------------|----------------------|----------|------------------|
+| `"startSite"` | TSS (strand-aware) | Downstream constrained by gene end | Promoter analysis | Yes (when `output="overlapping"` + `FeatureLocForDistance="TSS"`) |
+| `"endSite"` | Gene end (strand-aware) | Upstream constrained by gene start | 3' end analysis | Yes (when `output="overlapping"` + `FeatureLocForDistance="geneEnd"`) |
+| `"fullRange"` | Entire feature range | No constraints | Gene body + flanking | No (must be explicit) |
+| `"nearestBiDirectionalPromoters"` | TSS (both directions) | Uses `maxTSSDistance` instead | Bidirectional promoters | Yes (when `output="nearestBiDirectionalPromoters"`) |
+
+---
+
+**How `bindingType` Affects Region Expansion**:
+
+```
+bindingType = "startSite":
+  Annotation regions expanded by bindingRegion
+  Downstream expansion constrained by original feature boundaries
+  
+bindingType = "endSite":
+  Annotation regions expanded by bindingRegion
+  Upstream expansion constrained by original feature boundaries
+  
+bindingType = "fullRange":
+  Annotation regions expanded by bindingRegion
+  NO constraints (can extend beyond feature boundaries)
+  
+bindingType = "nearestBiDirectionalPromoters":
+  Uses promoters() function with bindingRegion
+  bindingRegion parameter is ignored for distance filtering
+  Uses maxTSSDistance instead
+  
+```
+
+---
+
+**Interaction with Other Parameters**:
+
+```
+When bindingRegion triggers annoPeaks():
+
+1. bindingType determines:
+   - Which reference point to use (TSS, geneEnd, or full range)
+   - How expansion is constrained
+   - Whether to use bidirectional promoter algorithm
+
+2. bindingRegion determines:
+   - Upstream/downstream expansion distances
+
+3. FeatureLocForDistance:
+   - Used to auto-determine bindingType when not explicit
+
+4. maxgap:
+   - IGNORED (bindingRegion is used instead)
+
+5. output:
+   - Must be "overlapping" or "nearestBiDirectionalPromoters" for auto-determination
+   - Determines which bindingType is auto-selected
 ```
 
 ---
@@ -508,7 +866,38 @@ Case 3: Overlapping
 
 ---
 
-### 5. `output = "upstream&inside"`
+### 5. `output = "inside"`
+
+**Description**: Returns features where peaks are completely contained within (inside) the feature region. Uses `type = "within"` in `findOverlaps()`, which requires the peak to be fully inside the feature boundaries.
+
+**Diagram**:
+```
+Case 1: Peak completely inside feature
+    [==========] Feature
+      [+++++]    Peak
+    ✓ Returns feature (peak is completely within feature)
+
+Case 2: Peak overlapping but not completely inside
+    [+++++]  Peak
+    [==========] Feature
+    ✗ Does not return (peak extends beyond feature boundaries)
+
+Case 3: Peak outside feature
+    [+++++]  [==========]
+     Peak     Feature
+    ✗ Does not return (peak is outside feature)
+```
+
+**Key Points**:
+- Uses `findOverlaps()` with `type = "within"`
+- Peak must be completely contained within feature boundaries
+- Does not use `maxgap` parameter (strict containment only)
+- Does not use reference points (uses boundary containment)
+- Useful for identifying peaks that are fully within gene bodies or exons
+
+---
+
+### 6. `output = "upstream&inside"`
 
 **Description**: Returns features where peaks are upstream of TSS (within maxgap) OR overlapping with feature.
 
@@ -542,7 +931,7 @@ Case 3: Overlapping
 
 ---
 
-### 6. `output = "inside&downstream"`
+### 7. `output = "inside&downstream"`
 
 **Description**: Returns features where peaks are downstream of gene end (within maxgap) OR overlapping with feature.
 
@@ -578,7 +967,7 @@ Case 3: Overlapping
 
 ---
 
-### 7. `output = "upstream"`
+### 8. `output = "upstream"`
 
 **Description**: Returns features where peaks are upstream of TSS (within maxgap).
 
@@ -614,7 +1003,7 @@ Case 3: Overlapping
 
 ---
 
-### 8. `output = "downstream"`
+### 9. `output = "downstream"`
 
 **Description**: Returns features where peaks are downstream of gene end (within maxgap).
 
@@ -651,7 +1040,7 @@ Case 3: Overlapping
 
 ---
 
-### 9. `output = "upstreamORdownstream"`
+### 10. `output = "upstreamORdownstream"`
 
 **Description**: Returns features that are either upstream of TSS OR downstream of gene end (both within maxgap).
 
@@ -688,10 +1077,9 @@ Case 3: Overlapping
 
 ---
 
-### 10. `output = "upstream2downstream"`
+### 11. `output = "upstream2downstream"`
 
-**Description**: Returns features upstream of TSS, feature region 
-and downstream of gene end (within maxgap).
+**Description**: Returns features where peaks are anywhere between upstream of TSS (within maxgap) and downstream of gene end (within maxgap). This creates a single expanded region that includes the feature plus maxgap upstream and maxgap downstream.
 
 **Diagram**:
 ```
@@ -699,11 +1087,40 @@ and downstream of gene end (within maxgap).
      Peak1   Feature       Peak2
     |<maxgap>|          |<maxgap>|
     
+    Expanded region: [feature start - maxgap] to [feature end + maxgap]
+    
+    Case 1: Peak1 upstream within maxgap
+        [+++++]  [==========]
+         Peak1   Feature
+         ✓ Returns feature
+    
+    Case 2: Peak2 downstream within maxgap
+        [==========]  [+++++]
+        Feature       Peak2
+        ✓ Returns feature
+    
+    Case 3: Peak inside feature
+        [==========]
+          [+++++]
+          Peak
+        ✓ Returns feature
+    
+    Case 4: Peak too far upstream
+   [+++++]              [==========]
+     Peak                 Feature
+     |<--maxgap+-->|
+     ✗ Does not return (gap > maxgap)
 ```
+
+**Key Points**:
+- Creates a single expanded region: `[feature start - maxgap]` to `[feature end + maxgap]`
+- Returns features if peak overlaps this expanded region
+- Captures peaks upstream, inside, and downstream of features (within maxgap)
+- More inclusive than `upstreamORdownstream` (which excludes peaks inside gene body)
 
 ---
 
-### 11. `output = "nearestBiDirectionalPromoters"`
+### 12. `output = "nearestBiDirectionalPromoters"`
 
 **Description**: Uses `annoPeaks()` to find bidirectional promoters. Requires `bindingRegion` 
 and determinable `bindingType`. Note: here the definition of bidirectional promoters is
@@ -729,6 +1146,47 @@ different from the literature's.
 
 ---
 
+## Combined Examples: How Parameters Work Together
+
+### Example 1: `nearestLocation` with Reference Points
+```
+Peak: [1000, 1500]
+Feature: [5'==========3'] (start=2000, end=5000, TSS=2000)
+
+PeakLocForDistance = "middle" → Peak reference = 1250
+FeatureLocForDistance = "TSS" → Feature reference = 2000
+
+Distance = |1250 - 2000| = 750 bp
+
+Result: ✓ Returns this feature (if it's the nearest)
+```
+
+### Example 2: `overlapping` with maxgap
+```
+Peak: [1000, 1500]
+             Feature: [5'==========3'] (start=2000, end=5000)
+
+Gap = max(1000, 2000) - min(1500, 5000) = 2000 - 1500 = 500 bp
+
+maxgap = 1000: ✓ Returns (gap 500 ≤ maxgap 1000)
+maxgap = 200:  ✗ Does not return (gap 500 > maxgap 200)
+```
+
+### Example 3: `upstream` with maxgap and FeatureLocForDistance
+```
+Peak: [500, 800]
+                  Feature: [5'==========3'] (start=2000, end=5000, TSS=2000)
+
+FeatureLocForDistance = "TSS" → TSS = 2000
+Peak end = 800
+Distance from peak end to TSS = 2000 - 800 = 1200 bp
+
+maxgap = 2000: ✓ Returns (peak is upstream, distance 1200 ≤ maxgap 2000)
+maxgap = 1000: ✗ Does not return (distance 1200 > maxgap 1000)
+```
+
+---
+
 ## Parameter Interactions
 
 ### When `maxgap` is Used
@@ -739,6 +1197,7 @@ different from the literature's.
 | `overlapping` | ✅ Yes | Gap between boundaries must be ≤ maxgap |
 | `both` | ✅ Yes | For overlapping part only |
 | `shortestDistance` | ❌ No | Uses `nearest()` function |
+| `inside` | ❌ No | Uses `type = "within"` (strict containment) |
 | `upstream&inside` | ✅ Yes | Defines upstream region extent |
 | `inside&downstream` | ✅ Yes | Defines downstream region extent |
 | `upstream` | ✅ Yes | Maximum distance upstream of TSS |
@@ -755,6 +1214,7 @@ different from the literature's.
 | `overlapping` | ❌ No | ❌ No (uses boundaries) |
 | `both` | ✅ Yes (for nearest) | ✅ Yes (for nearest) |
 | `shortestDistance` | ❌ No | ❌ No (uses boundaries) |
+| `inside` | ❌ No | ❌ No (uses boundary containment) |
 | `upstream&inside` | ❌ No | ✅ Yes (for TSS) |
 | `inside&downstream` | ❌ No | ✅ Yes (for geneEnd) |
 | `upstream` | ❌ No | ✅ Yes (for TSS) |
@@ -773,6 +1233,7 @@ different from the literature's.
 | `overlapping` | Promoter/gene body analysis | maxgap |
 | `both` | Comprehensive annotation | PeakLocForDistance, FeatureLocForDistance, maxgap |
 | `shortestDistance` | Minimum boundary distance | (none - uses boundaries) |
+| `inside` | Peaks completely within features | (none - uses boundary containment) |
 | `upstream&inside` | Promoter + gene body | maxgap, FeatureLocForDistance |
 | `inside&downstream` | Gene body + 3' region | maxgap, FeatureLocForDistance="geneEnd" |
 | `upstream` | Upstream regulatory elements | maxgap, FeatureLocForDistance |
