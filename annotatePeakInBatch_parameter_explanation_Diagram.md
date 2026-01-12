@@ -373,19 +373,7 @@ maxgap = 200: ✓ Returns (gap = 200 ≤ 200)
 maxgap = 500: ✓ Returns (gap = 200 ≤ 500)
 ```
 
-**When is `maxgap` used?**
-- ✅ Used in `output = "overlapping"` - gap between boundaries must be ≤ maxgap
-- ✅ Used in `output = "both"` - for the overlapping part
-- ✅ Used in `output = "upstream"` - maximum distance upstream of TSS
-- ✅ Used in `output = "downstream"` - maximum distance downstream of gene end
-- ✅ Used in `output = "upstream&inside"` - defines upstream region extent
-- ✅ Used in `output = "inside&downstream"` - defines downstream region extent
-- ✅ Used in `output = "upstreamORdownstream"` - both directions
-- ✅ Used in `output = "upstream2downstream"` - both directions
-- ❌ **NOT used** in `output = "nearestLocation"` - uses reference point distances only
-- ❌ **NOT used** in `output = "shortestDistance"` - uses `nearest()` function
-- ❌ **NOT used** in `output = "inside"` - uses `type = "within"` (strict containment)
-- ❌ **NOT used** in `output = "nearestBiDirectionalPromoters"` - uses `bindingRegion` instead
+**When is `maxgap` used?** See the [table of when `maxgap` is used](#when-maxgap-is-used) in the Parameter Interactions section for a complete breakdown of which output modes use `maxgap` and how.
 
 **Important Notes**:
 1. **Gap vs Distance**: 
