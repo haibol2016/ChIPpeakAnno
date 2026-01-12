@@ -66,18 +66,17 @@
 #'                without constraints. Use for gene body or full transcript
 #'                analysis.
 #'          \item \code{"nearestBiDirectionalPromoters"}: Identifies peaks near
-#'                bidirectional promoters using a two-step algorithm: (1) first
-#'                identifies candidate bidirectional promoters by finding pairs
-#'                of divergent genes (head-to-head) where their TSSs are within
-#'                \code{maxTSSDistance}, then (2) finds peaks whose centers are
-#'                overlapping with the bidirectional promoter regions.
-#'                This matches the literature definition (Adachi et al.
-#'                2007) where bidirectional promoters are shared promoter regions
-#'                between two divergently transcribed genes. Reports annotations
-#'                for both genes in each bidirectional promoter pair. Note:
-#'                \code{bindingRegion} parameter is ignored for this bindingType.
-#'                \code{select = "bestOne"} is not supported and both genes are
-#'                always kept.
+#'                bidirectional promoters. Creates promoter regions using
+#'                \code{promoters()} function with \code{bindingRegion} as
+#'                upstream/downstream distances, then finds peaks overlapping
+#'                with these expanded promoter regions. For each peak, reports
+#'                annotations for features from both directions (both strands) if
+#'                the peak overlaps with promoters from both sides, or the nearest
+#'                promoter in one direction. Note: This definition differs from
+#'                the literature definition (Adachi et al. 2007) which requires
+#'                explicit identification of divergent gene pairs. \code{select = "bestOne"}
+#'                is not supported and both genes are always kept when bidirectional
+#'                promoters are detected.
 #'          \item \code{"bothSidesNearest"} (deprecated): Similar to
 #'                \code{"nearestBiDirectionalPromoters"} but expands peak regions
 #'                instead of annotation regions. Kept for backward compatibility.
@@ -87,9 +86,9 @@
 #'        \itemize{
 #'          \item \code{"startSite"}, \code{"endSite"}, \code{"fullRange"}:
 #'                Annotation regions are expanded by \code{bindingRegion}
-#'          \item \code{"nearestBiDirectionalPromoters"}: Uses distance-based
-#'                filtering (peak center to BDP center) instead of region expansion.
-#'                \code{bindingRegion} is ignored; use \code{maxTSSDistance} instead.
+#'          \item \code{"nearestBiDirectionalPromoters"}: Uses \code{promoters()}
+#'                function to create promoter regions with \code{bindingRegion} as
+#'                upstream/downstream distances, then finds overlaps with peaks
 #'          \item \code{"bothSidesNearest"} (deprecated): Peak regions are
 #'                expanded by \code{bindingRegion}
 #'        }
@@ -106,7 +105,8 @@
 #'        expanded region are considered for annotation.
 #'        
 #'        \strong{Note:} For \code{bindingType = "nearestBiDirectionalPromoters"},
-#'        this parameter is ignored. Use \code{maxTSSDistance} instead.
+#'        this parameter is used with \code{promoters()} function to define
+#'        promoter regions (upstream/downstream from TSS).
 #' 
 #' @param ignore.peak.strand A logical value indicating whether to ignore peak
 #'        strand information when calculating distances. When \code{TRUE}
@@ -132,12 +132,6 @@
 #'        when \code{bindingType = "nearestBiDirectionalPromoters"}. For
 #'        bidirectional promoters, both genes are always kept regardless of
 #'        \code{select} value.
-#' 
-#' @param maxTSSDistance A single integer value specifying the maximum distance
-#'        (in base pairs) between two divergent TSSs to be considered a
-#'        bidirectional promoter. Default is \code{1000L} (1kb). This parameter
-#'        is only used when \code{bindingType = "nearestBiDirectionalPromoters"}.
-#'        This determines which gene pairs form bidirectional promoters.
 #' 
 #' @param ... Additional parameters (currently not used)
 #' 
@@ -233,8 +227,10 @@
 #'   
 #'   \item \strong{Filter for bidirectional promoters} (if applicable): For 
 #'         \code{bindingType = "nearestBiDirectionalPromoters"}, filters to keep 
-#'         peaks associated with promoters from both directions (both strands) 
-#'         or the nearest promoter in one direction.
+#'         peaks that overlap with promoters from both directions (both strands) 
+#'         or the nearest promoter in one direction. The filtering is based on
+#'         peak-feature relationships (upstream, overlapStart, inside, overlapEnd)
+#'         relative to the feature's TSS.
 #'   
 #'   \item \strong{Calculate distances}: For each overlapping peak-feature pair:
 #'         \itemize{
@@ -280,6 +276,8 @@
 #'   \item \code{bindingType = "nearestBiDirectionalPromoters"}, 
 #'         \code{bindingRegion = c(-5000, 3000)}: Creates promoter regions from 
 #'         5kb upstream to 3kb downstream of TSS using \code{promoters()} function.
+#'         Finds peaks overlapping with these promoter regions and reports
+#'         annotations for features from both directions if applicable.
 #' }
 #' 
 #' @importFrom GenomeInfoDb seqlevelsStyle seqlengths
@@ -313,6 +311,8 @@
 #' head(annotated_peaks)
 #' 
 #' ## Example 2: Bidirectional promoter detection
+#' # Note: This finds peaks overlapping with promoter regions and reports
+#' # annotations from both directions if applicable
 #' annotated_peaks <- annoPeaks(myPeakList, annoGR,
 #'                              bindingType = "nearestBiDirectionalPromoters",
 #'                              bindingRegion = c(-5000, 3000))
@@ -342,19 +342,16 @@ annoPeaks <- function(peaks,
                       bindingRegion = c(-5000, 5000),
                       ignore.peak.strand = TRUE,
                       select = c("all", "bestOne"),
-                      maxTSSDistance = 1000L,
                       ...) {
     stopifnot(inherits(peaks, "GRanges"))
     stopifnot(inherits(annoData, c("annoGR", "GRanges")))
     stopifnot(length(bindingRegion) == 2L)
     stopifnot(bindingRegion[1] <= 0L && bindingRegion[2] >= 1L)
-    stopifnot(is.numeric(maxTSSDistance))
     select <- match.arg(select)
     if (is.null(names(annoData))) {
         stop("annoData must have names")
     }
     
-    maxTSSDistance <- round(maxTSSDistance[1L])
     if (bindingType[1] %in%
         # bothSidesNearest and bothSidesNSS are deprecated, but kept for
         # backward compatibility
@@ -379,7 +376,7 @@ annoPeaks <- function(peaks,
     }, error = function(w) {
         warning("seqlevel style not recognized, you are probably ",
                 "using custom GRanges objects: ", w$message)
-        return(NA)
+        return(GRanges())
     })
     if (!any(is.na(check_seqlevel))) {
         stopifnot(length(intersect(seqlevelsStyle(peaks),

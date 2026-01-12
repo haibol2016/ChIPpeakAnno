@@ -5,7 +5,8 @@
 #' start sites (TSS), exons, 5' untranslated regions (5'UTR), 3' untranslated regions (3'UTR), 
 #' and transcripts. It calculates distances, identifies overlaps,
 #' and determines spatial relationships (upstream, downstream, inside, etc.)
-#' between peaks and features.
+#' between peaks and features. For visual explanation to parameter settings, 
+#' see [Git Hub Repository](add the md file link).
 #' 
 #' @param myPeakList A \link[GenomicRanges:GRanges-class]{GRanges} object
 #'        containing the peak regions to be annotated. Each element should
@@ -25,8 +26,9 @@
 #'        "Exon" (exonic regions), "5utr" (5' untranslated regions), "3utr" (3' untranslated regions), 
 #'        "transcript" (transcripts), "ExonPlusUtr" (exonic regions plus untranslated regions). 
 #'        Note: "Exon" retrieves exon annotations, which may include multiple exons per gene.
-#'        See \code{\link{getAnnotation}} for details.
-#' 
+#'        See \code{\link{getAnnotation}} for details. Choosing the proper featureType 
+#'        according the goal of experiment is important. Some \code{output} modes and other 
+#'        parameters require specific featureTypes to make sense. 
 #' @param AnnotationData A \link[GenomicRanges:GRanges-class]{GRanges} or
 #'        \code{\link{annoGR}} object. It can be the output from the function 
 #'        \code{\link{getAnnotation}} or a customized annotation of class
@@ -37,16 +39,16 @@
 #' \describe{
 #'   \item{nearestLocation (default)}{Outputs the nearest features based on the
 #'         absolute distance between reference points: 
-#'         |\code{PeakLocForDistance} - \code{FeatureLocForDistance}|. The reference
+#'         `|PeakLocForDistance - FeatureLocForDistance|`. The reference
 #'         points are determined by \code{PeakLocForDistance} in the peak region
 #'         and \code{FeatureLocForDistance} in the feature region. This option
 #'         returns both non-overlapping and overlapping features, as long as they
 #'         have the minimum distance to the peak.}
 #'   \item{overlapping}{Outputs all features that overlap with peak regions, where
-#'         overlap is defined as having a gap (computed by \code{distance()}) not greater than \code{maxgap}
-#'         between the peak and feature boundaries. A peak may be annotated with
-#'         zero features (NA will be returned), one feature, or multiple features
-#'         depending on the number of overlapping features found.}
+#'         overlap is defined as having a gap (computed by \code{distance()}) not 
+#'         greater than \code{maxgap} between the peak and feature boundaries. A 
+#'         peak may be annotated with zero features (NA will be returned), one feature, 
+#'         or multiple features depending on the number of overlapping features found.}
 #'   \item{both}{Outputs all nearest features as defined by the \code{nearestLocation} 
 #'         option, plus any additional overlapping features as defined by the 
 #'         \code{overlapping} option. This provides the most comprehensive
@@ -181,14 +183,14 @@
 #' @param bindingRegion A vector with two integer values specifying relative
 #'        offsets (in base pairs) from the feature's reference point to define
 #'        the annotation region. The first value is the upstream offset
-#'        (negative) and the second value is the downstream offset (positive),
-#'        both relative to the feature's TSS or gene end depending on
-#'        \code{FeatureLocForDistance}. Default is \code{NULL}.
+#'        (negative) and the second value is the downstream offset
+#'        (>= 1), both relative to the feature's TSS or gene
+#'        end depending on \code{bindingType}. Default is \code{NULL}.
 #'        
 #'        \strong{When \code{bindingRegion} triggers \code{annoPeaks()}:}
 #'        \itemize{
-#'          \item \code{bindingRegion} must have length > 1 (i.e., be a vector
-#'                with 2 values)
+#'          \item \code{bindingRegion} must have length 2 (i.e., be a vector
+#'                with exactly 2 values)
 #'          \item \code{bindingType} must be determinable (either provided via
 #'                \code{...} or automatically determined from \code{output} and
 #'                \code{FeatureLocForDistance})
@@ -199,16 +201,18 @@
 #'        \strong{When \code{bindingRegion} is ignored:}
 #'        \itemize{
 #'          \item \code{bindingRegion} is \code{NULL} or length <= 1, OR
-#'          \item \code{bindingType} cannot be determined (e.g., \code{output} is
-#'                not "overlapping" or "nearestBiDirectionalPromoters", or
-#'                \code{FeatureLocForDistance} is not "TSS" or "geneEnd")
+#'          \item \code{bindingRegion} is provided but \code{bindingType} cannot
+#'                be determined (e.g., \code{output} is not "overlapping" or
+#'                "nearestBiDirectionalPromoters" and \code{bindingType} is not
+#'                explicitly provided via \code{...})
 #'          \item In these cases, the internal annotation logic is used instead
 #'        }
 #'        
 #'        See the "Annotation Method Selection" section below for detailed
 #'        explanation of when each method is used. This parameter is required for
 #'        \code{output = "nearestBiDirectionalPromoters"}. Here is how to use it
-#'        together with the parameters \code{output} and \code{FeatureLocForDistance}:
+#'        together with the parameters \code{output}, \code{FeatureLocForDistance},
+#'        and \code{bindingType}:
 #'        \itemize{
 #'          \item To obtain peaks with nearest bi-directional promoters within
 #'                5kb upstream and 3kb downstream of TSS, set
@@ -217,16 +221,20 @@
 #'          \item To obtain peaks within 5kb upstream and up to 3kb downstream
 #'                of TSS within the gene body, set \code{output = "overlapping"},
 #'                \code{FeatureLocForDistance = "TSS"} and
-#'                \code{bindingRegion = c(-5000, 3000)}
+#'                \code{bindingRegion = c(-5000, 3000)} (bindingType will be
+#'                auto-determined as "startSite")
 #'          \item To obtain peaks up to 5kb upstream within the gene body and
 #'                3kb downstream of gene/primary transcript end, set
 #'                \code{output = "overlapping"},
 #'                \code{FeatureLocForDistance = "geneEnd"} and
-#'                \code{bindingRegion = c(-5000, 3000)}
+#'                \code{bindingRegion = c(-5000, 3000)} (bindingType will be
+#'                auto-determined as "endSite")
 #'          \item To obtain peaks from 5kb upstream to 3kb downstream of
 #'                genes/primary transcripts, set \code{output = "overlapping"},
-#'                \code{bindingType = "fullRange"} and
+#'                \code{bindingType = "fullRange"} (via \code{...}) and
 #'                \code{bindingRegion = c(-5000, 3000)}
+#'          \item For other \code{output} modes, explicitly provide
+#'                \code{bindingType} via \code{...} to trigger \code{annoPeaks()}
 #'        }
 #'        For more details, see \link{annoPeaks}.
 #' @param ... Additional parameters that can be passed to \link{annoPeaks}
@@ -297,34 +305,43 @@
 #' 
 #' \strong{Method 1: \code{annoPeaks()} (region-based annotation)}
 #' 
-#' Used when \code{bindingRegion} is provided (length > 1) AND \code{bindingType}
+#' Used when \code{bindingRegion} is provided (length = 2) AND \code{bindingType}
 #' can be determined. The \code{bindingType} is automatically determined from:
 #' \itemize{
 #'   \item \code{output = "nearestBiDirectionalPromoters"} → 
 #'         \code{bindingType = "nearestBiDirectionalPromoters"}
-#'   \item \code{output = "overlapping"} with \code{FeatureLocForDistance = "TSS"} → 
+#'   \item \code{output = "overlapping"} and \code{FeatureLocForDistance = "TSS"} → 
 #'         \code{bindingType = "startSite"}
-#'   \item \code{output = "overlapping"} with \code{FeatureLocForDistance = "geneEnd"} → 
+#'   \item \code{output = "overlapping"} and \code{FeatureLocForDistance = "geneEnd"} → 
 #'         \code{bindingType = "endSite"}
-#'   \item \code{bindingType} can also be explicitly provided via \code{...}
 #' }
+#' 
+#' \code{bindingType} can also be explicitly provided via \code{...} for any
+#' \code{output} mode to trigger Method 1. For \code{output} modes other than
+#' "overlapping" or "nearestBiDirectionalPromoters", you must explicitly provide
+#' \code{bindingType} via \code{...} if you want to use Method 1.
 #' 
 #' When this method is used:
 #' \itemize{
 #'   \item Region expansion depends on \code{bindingType}:
 #'         \itemize{
-#'           \item \code{bindingType = "startSite"}, \code{"endSite"}, or
-#'                 \code{"fullRange"}: Annotation regions are expanded by
-#'                 \code{bindingRegion} (e.g., ±5kb from TSS or gene end)
+#'           \item \code{bindingType = "startSite"}: Annotation regions are
+#'                 expanded by \code{bindingRegion} relative to TSS (strand-aware),
+#'                 with downstream expansion constrained to not exceed original
+#'                 feature boundaries
+#'           \item \code{bindingType = "endSite"}: Annotation regions are
+#'                 expanded by \code{bindingRegion} relative to gene end
+#'                 (strand-aware), with upstream expansion constrained to not
+#'                 exceed original feature boundaries
+#'           \item \code{bindingType = "fullRange"}: Annotation regions are
+#'                 expanded by \code{bindingRegion} in both directions without
+#'                 constraints
 #'           \item \code{bindingType = "nearestBiDirectionalPromoters"}:
 #'                 Annotation regions are expanded using \code{promoters()} 
-#'                 function
-#'                 with \code{bindingRegion} as upstream/downstream distances
-#'           \item \code{bindingType = "bothSidesNearest"} (deprecated):
-#'                 Peak regions are expanded by \code{bindingRegion}
+#'                 function with \code{bindingRegion} as upstream/downstream
+#'                 distances
 #'         }
-#'   \item Overlaps are found with expanded regions (or expanded peaks for
-#'         \code{"bothSidesNearest"})
+#'   \item Overlaps are found with expanded annotation regions
 #'   \item Distance is calculated using GenomicRanges \code{distance()} function
 #'   \item \code{maxgap} parameter is ignored
 #'   \item Supports \code{select = "bestOne"} option (via \code{...})
@@ -337,8 +354,8 @@
 #'   \item \code{bindingRegion} is \code{NULL} or length <= 1, OR
 #'   \item \code{bindingRegion} is provided but \code{bindingType} cannot be
 #'         determined (e.g., \code{output} is not "overlapping" or
-#'         "nearestBiDirectionalPromoters", or \code{FeatureLocForDistance} is not
-#'         "TSS" or "geneEnd")
+#'         "nearestBiDirectionalPromoters" and \code{bindingType} is not
+#'         explicitly provided via \code{...})
 #' }
 #' 
 #' When this method is used:
@@ -394,7 +411,8 @@
 #'         \itemize{
 #'           \item \strong{Yes} → Use \code{bindingRegion = c(-5000, 3000)}
 #'                 with appropriate \code{output} and \code{FeatureLocForDistance}
-#'                 to trigger Method 1
+#'                 (or explicitly provide \code{bindingType} via \code{...}) to
+#'                 trigger Method 1
 #'           \item \strong{No} → Continue to step 2
 #'         }
 #'   \item Do you need bidirectional promoter detection?
@@ -406,8 +424,12 @@
 #'   \item Do you need specific \code{output} modes like "shortestDistance",
 #'         "upstream", "downstream", or "nearestLocation"?
 #'         \itemize{
-#'           \item \strong{Yes} → Don't set \code{bindingRegion} (or set it to
-#'                 \code{NULL}) to use Method 2
+#'           \item \strong{Yes, but want region-based annotation} → Use
+#'                 \code{bindingRegion} with \code{bindingType} explicitly
+#'                 provided via \code{...} to trigger Method 1
+#'           \item \strong{Yes, and want point-based annotation} → Don't set
+#'                 \code{bindingRegion} (or set it to \code{NULL}) to use
+#'                 Method 2
 #'           \item \strong{No} → Continue to step 4
 #'         }
 #'   \item Do you need flexible distance calculations using different reference
@@ -423,12 +445,16 @@
 #' \itemize{
 #'   \item \strong{Promoter analysis}: Use Method 1 with
 #'         \code{bindingRegion = c(-2000, 500)} and
-#'         \code{output = "overlapping"}
+#'         \code{output = "overlapping"} (bindingType auto-determined as
+#'         "startSite" when FeatureLocForDistance = "TSS")
 #'   \item \strong{Nearest gene annotation}: Use Method 2 with
 #'         \code{output = "nearestLocation"} (default, no \code{bindingRegion})
 #'   \item \strong{Bidirectional promoters}: Use Method 1 with
 #'         \code{output = "nearestBiDirectionalPromoters"} and
 #'         \code{bindingRegion = c(-5000, 3000)}
+#'   \item \strong{Region-based with other output modes}: Use Method 1 with
+#'         \code{bindingRegion = c(-5000, 3000)}, \code{bindingType = "startSite"}
+#'         (via \code{...}), and any \code{output} mode
 #'   \item \strong{Flexible distance calculation}: Use Method 2 with
 #'         \code{PeakLocForDistance = "middle"} and
 #'         \code{FeatureLocForDistance = "TSS"} (no \code{bindingRegion})
@@ -499,27 +525,42 @@
 #' \strong{Setting \code{bindingRegion} based on target factor and metagene pattern:}
 #' \itemize{
 #'   \item \strong{Transcription factors (TSS enrichment)}: Use
-#'         \code{c(-2000, 500)} for standard promoter-proximal binding or
-#'         \code{c(-5000, 3000)} for extended promoter regions.
+#'         \code{bindingRegion = c(-2000, 500)} with \code{bindingType = "startSite"}
+#'         (via \code{...}) for standard promoter-proximal binding, or
+#'         \code{bindingRegion = c(-5000, 3000)} for extended promoter regions.
+#'         When \code{output = "overlapping"} and \code{FeatureLocForDistance = "TSS"},
+#'         \code{bindingType} is auto-determined as "startSite".
 #'   \item \strong{Histone marks - H3K4me3}: Strong at TSS, narrow peaks. Use
-#'         \code{c(-2000, 500)} with \code{PeakLocForDistance = "middle"}.
-#'   \item \strong{Histone marks - H3K27ac}: TSS and enhancers, medium peaks.
-#'         Use \code{c(-5000, 3000)}.
+#'         \code{bindingRegion = c(-2000, 500)} with \code{PeakLocForDistance = "middle"}
+#'         and \code{bindingType = "startSite"} (via \code{...}).
+#'   \item \strong{Histone marks - H3K27ac}: TSS and enhancers, medium peaks. Use
+#'         \code{bindingRegion = c(-5000, 3000)} with \code{bindingType = "startSite"}
+#'         (via \code{...}).
 #'   \item \strong{Histone marks - H3K36me3}: Gene body, broad peaks. Use
-#'         \code{bindingType = "fullRange"} (via \code{...}) with
-#'         \code{PeakLocForDistance = "middle"} (required).
+#'         \code{bindingRegion = c(-5000, 5000)} with \code{bindingType = "fullRange"}
+#'         (via \code{...}) and \code{PeakLocForDistance = "middle"} (required).
 #'   \item \strong{Histone marks - H3K27me3/H3K9me3}: Broad domains, very broad
-#'         peaks. Use \code{bindingType = "fullRange"} with
-#'         \code{bindingRegion = c(-5000, 5000)} and
+#'         peaks. Use \code{bindingRegion = c(-5000, 5000)} with
+#'         \code{bindingType = "fullRange"} (via \code{...}) and
 #'         \code{PeakLocForDistance = "middle"} (required).
 #'   \item \strong{Histone marks - H3K4me1}: Enhancers, gene body. Use
-#'         \code{c(-5000, 5000)}.
+#'         \code{bindingRegion = c(-5000, 5000)} with \code{bindingType = "fullRange"}
+#'         (via \code{...}).
 #'   \item \strong{Enhancers}: Can be located 10-100kb from TSS. Use
-#'         \code{c(-100000, 100000)} or larger for distal regulatory elements,
-#'         or use \code{output = "nearestLocation"} with \code{maxgap = 5000}.
-#'   \item \strong{Bidirectional promoters}: Use \code{c(-5000, 3000)} or
-#'         \code{c(-5000, 5000)} to capture the shared promoter region.
+#'         \code{bindingRegion = c(-100000, 100000)} with \code{bindingType = "startSite"}
+#'         (via \code{...}) for distal regulatory elements, or use
+#'         \code{output = "nearestLocation"} with \code{maxgap = 5000}.
+#'   \item \strong{Bidirectional promoters}: Use \code{bindingRegion = c(-5000, 3000)}
+#'         or \code{c(-5000, 5000)} with \code{output = "nearestBiDirectionalPromoters"}
+#'         (bindingType auto-determined).
 #' }
+#' 
+#' \strong{Note on \code{bindingType}}: When using \code{bindingRegion}, you can
+#' explicitly provide \code{bindingType} via \code{...} for any \code{output} mode.
+#' For \code{output = "overlapping"} or \code{"nearestBiDirectionalPromoters"},
+#' \code{bindingType} is automatically determined if not provided. For other
+#' \code{output} modes, you must explicitly provide \code{bindingType} via
+#' \code{...} to trigger the region-based annotation method (\code{annoPeaks()}).
 #' 
 #' \strong{Annotation data sources:}
 #' \itemize{
