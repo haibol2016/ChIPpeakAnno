@@ -32,10 +32,13 @@
 #'        features.
 #' @param genomicAnnotationPriority A character vector specifying the priority
 #'        order for genomic annotations. Default is:
-#'        \code{c("Promoter", "5UTR", "3UTR", "Exon", "Intron", "Immediate Downstream",
-#'        "1st Exon", "Other Exon", "1st Intron", "Other Intron", "Distal Intergenic")}.
-#'        Annotations are assigned based on this priority order when a peak
-#'        overlaps multiple features.
+#'        \code{c("promoter", "fiveUTR", "firstExon", "firstIntron", "threeUTR", 
+#'        "otherExon", "otherIntron", "immediateDownstream", "distalIntergenic")}.
+#'        Valid annotation types are: "promoter", "fiveUTR", "threeUTR", "firstExon",
+#'        "otherExon", "firstIntron", "otherIntron", "immediateDownstream", 
+#'        "distalIntergenic". Annotations are assigned based on this priority order
+#'        when a peak overlaps multiple features. Higher priority features (earlier
+#'        in the vector) take precedence over lower priority features.
 #' @param ignore_strand Logical. If \code{TRUE}, strand information is ignored
 #'        when finding overlaps. Default is \code{FALSE}. If all peaks have
 #'        strand "*", this is automatically set to \code{TRUE}.
@@ -47,7 +50,26 @@
 #'        features, which is the traditional approach but may be less precise for
 #'        large peaks.
 #' 
-#' @return A data.frame with two columns: \code{annotation} (detailed genomic annotation for each peak with possible values including Promoter bins, 5' UTR, 3' UTR, 1st Exon, Other Exon, 1st Intron, Other Intron, Immediate Downstream, and Distal Intergenic) and \code{priorityAnnotation} (the prioritized annotation based on \code{genomicAnnotationPriority}).
+#' @return A list with two elements:
+#'        \itemize{
+#'          \item \code{peaks_annotated_with_overlapping_features}: A
+#'                \link[GenomicRanges:GRanges-class]{GRanges} object containing
+#'                the input peaks with two additional metadata columns:
+#'                \itemize{
+#'                  \item \code{annotation}: Character vector containing all
+#'                        overlapping annotations for each peak (comma-separated).
+#'                        Possible values include Promoter bins (e.g., "Promoter (<=1kb)",
+#'                        "Promoter (1-2kb)"), "5' UTR", "3' UTR", "1st Exon",
+#'                        "Other Exon", "1st Intron", "Other Intron", "Immediate Downstream",
+#'                        and "Distal Intergenic".
+#'                  \item \code{priorityAnnotation}: Character vector containing
+#'                        the highest priority annotation for each peak based on
+#'                        \code{genomicAnnotationPriority}. Only one annotation
+#'                        type per peak (the highest priority one).
+#'                }
+#'          \item \code{plot_priority_annotation}: A plot object (donut chart)
+#'                visualizing the distribution of priority annotations across all peaks.
+#'        }
 #' 
 #' @details
 #' This function provides detailed genomic annotation similar to ChIPseeker's
@@ -69,6 +91,9 @@
 #'         features, the annotation is assigned based on \code{genomicAnnotationPriority},
 #'         with higher priority features taking precedence. Features are checked in
 #'         reverse priority order (lowest to highest) for efficiency.
+#'   \item \strong{Visualization}: Automatically generates a donut chart visualizing
+#'         the distribution of priority annotations across all peaks using the
+#'         \code{\link{donut}} function.
 #' }
 #' 
 #' @importFrom GenomicFeatures exons intronsByTranscript fiveUTRsByTranscript
@@ -80,7 +105,11 @@
 #' txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
 #' data(peaks1)
 #' result <- getGenomicAnnotation(peaks1, txdb)
-#' head(result)
+#' # Access annotated peaks
+#' annotated_peaks <- result$peaks_annotated_with_overlapping_features
+#' head(mcols(annotated_peaks)[, c("annotation", "priorityAnnotation")])
+#' # View the plot
+#' result$plot_priority_annotation
 #' @export
 getGenomicAnnotation <- function(peaks, TxDb, tssRegion = c(-3000, 3000),
                                  immediateDownstreamLength = 3000,
@@ -491,6 +520,10 @@ getGenomicAnnotation <- function(peaks, TxDb, tssRegion = c(-3000, 3000),
     )
     # add peaks to the annotation_df
     mcols(peaks) <- cbind(mcols(peaks), annotation_df)
-    peaks
+
+    # plot the priority annotation
+    p <- donut(table(priority_annotation), labels = names(table(priority_annotation)))
+
+    list(peaks_annotated_with_overlapping_features = peaks, plot_priority_annotation = p)
 }
 

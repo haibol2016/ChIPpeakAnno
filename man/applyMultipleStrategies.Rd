@@ -4,13 +4,13 @@
 \alias{applyMultipleStrategies}
 \title{Apply multiple annotation strategies in parallel}
 \usage{
-applyMultipleStrategies(peaks, annoData, strategies = NULL, BPPARAM = NULL)
+applyMultipleStrategies(peaks, EnsDb, strategies = NULL, BPPARAM = NULL)
 }
 \arguments{
 \item{peaks}{A \code{GRanges} object containing peaks to be annotated.}
 
-\item{annoData}{A \code{GRanges} or \code{annoGR} object containing
-annotation data.}
+\item{EnsDb}{A \code{EnsDb} object containing
+genome annotation data (genes, transcripts, exons, etc.) for an organism.}
 
 \item{strategies}{A list of strategy definitions. Each strategy is a list
 with:
@@ -69,11 +69,11 @@ enabled if \code{BiocParallel} is available. To control parallel processing:
   \item \strong{Parallel execution}: Multiple strategies run simultaneously,
         potentially reducing total computation time by up to N-fold where N
         is the number of strategies (limited by available CPU cores)
-  \item \strong{Expected speedup}: With 4-5 default strategies and sufficient
-        cores, expect 2-4x speedup for large peak sets (>1000 peaks)
+  \item \strong{Expected speedup}: With 3 default strategies and sufficient
+        cores, expect 2-3x speedup for large peak sets (>1000 peaks)
   \item \strong{Best performance when}:
         \itemize{
-          \item Multiple strategies are applied (default: 5 strategies)
+          \item Multiple strategies are applied (default: 3 strategies)
           \item Large peak sets are being annotated (>1000 peaks)
           \item Annotation operations are computationally intensive
           \item Multiple CPU cores are available
@@ -86,23 +86,26 @@ enabled if \code{BiocParallel} is available. To control parallel processing:
 
 \strong{Default Strategies:}
 
+The default strategies are optimized for transcription factor (TF) binding
+factors. Transcripts are extracted from the \code{EnsDb} object using
+\code{ensembldb::transcripts()}. The default strategies include:
+
 \enumerate{
   \item \strong{Promoter-focused}: Uses \code{annotatePeakInBatch} with
-        \code{output = "overlapping"}, \code{maxgap = 2000},
-        \code{FeatureLocForDistance = "TSS"}. Optimized for finding
-        promoter-proximal binding.
-  \item \strong{Gene body}: Uses \code{annoPeaks} with
-        \code{bindingType = "fullRange"}, \code{bindingRegion = c(-1000, 1000)}.
-        Optimized for finding gene body binding.
-  \item \strong{Nearest (comprehensive)}: Uses \code{annotatePeakInBatch}
-        with \code{output = "nearestLocation"}, \code{maxgap = 10000}.
-        Finds nearest features regardless of relationship type.
-  \item \strong{Bidirectional promoters}: Uses fixed bidirectional promoter
-        detection (from \code{.identifyBidirectionalPromoters}).
-  \item \strong{Intergenic/distal}: Uses \code{annotatePeakInBatch} with
-        \code{output = "nearestLocation"}, \code{maxgap = 50000}. Finds
-        distal/intergenic features.
+        \code{output = "both"}, \code{maxgap = 3000},
+        \code{FeatureLocForDistance = "TSS"}, \code{PeakLocForDistance = "middle"}.
+        Optimized for finding promoter-proximal binding and nearest features.
+  \item \strong{Upstream to downstream}: Uses \code{annotatePeakInBatch} with
+        \code{output = "upstream2downstream"}, \code{maxgap = 5000},
+        \code{FeatureLocForDistance = "TSS"}, \code{PeakLocForDistance = "middle"}.
+        Captures peaks upstream of TSS, inside gene bodies, and downstream of gene end
+        (within maxgap distance).
+  \item \strong{Bidirectional promoters}: Uses \code{annotatePeaksNearBDP} with
+        \code{maxTSSDistance = 1000}. Detects peaks near bidirectional promoters.
 }
+
+Note: Strategy parameters (including \code{myPeakList} and \code{AnnotationData})
+must be included in the \code{params} list when defining custom strategies.
 }
 \author{
 Haibo Liu

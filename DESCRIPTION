@@ -50,6 +50,7 @@ Imports:
     dplyr,
     enrichR,
     ensembldb,
+    fgsea,
     GenomeInfoDb,
     GenomicAlignments,
     GenomicFeatures,

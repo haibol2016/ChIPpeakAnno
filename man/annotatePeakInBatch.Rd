@@ -14,7 +14,7 @@ annotatePeakInBatch(
     "upstreamORdownstream", "upstream2downstream", "nearestBiDirectionalPromoters"),
   multiple = c(TRUE, FALSE),
   maxgap = -1L,
-  PeakLocForDistance = c("start", "middle", "end", "endMinusStart"),
+  PeakLocForDistance = c("middle", "start", "end", "endMinusStart"),
   FeatureLocForDistance = c("TSS", "middle", "start", "end", "geneEnd"),
   select = c("all", "first", "last", "arbitrary"),
   ignore.strand = TRUE,

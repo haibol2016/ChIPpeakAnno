@@ -1096,7 +1096,7 @@ Case 3: Peak outside feature
     Case 4: Peak too far upstream
    [+++++]              [==========]
      Peak                 Feature
-     |<--maxgap+-->|
+            |<--maxga-->|
      ✗ Does not return (gap > maxgap)
 ```
 
@@ -1194,22 +1194,31 @@ maxgap = 1000: ✗ Does not return (distance 1200 > maxgap 1000)
 | `upstream2downstream` | ✅ Yes | Both directions use maxgap |
 | `nearestBiDirectionalPromoters` | ❌ No | Uses `bindingRegion` instead |
 
-### When Reference Points are Used
+### When Reference Points are Used for Overlap Detection
+
+**Important Distinction:**
+
+This table indicates when reference points are used for **overlap detection** (finding which features match). This is different from **distance calculation**:
+
+- **Overlap Detection**: Determines which features are selected/returned. Some modes use reference points here (e.g., `nearestLocation` uses both, `upstream` uses only `FeatureLocForDistance` for TSS).
+- **Distance Calculation**: After overlaps are found, `distancetoFeature` is **always calculated using BOTH** `PeakLocForDistance` and `FeatureLocForDistance` for all output modes (except those using `annoPeaks()`). This happens in STEP2 of the annotation process (lines 866-892 in the code), regardless of what was used for overlap detection.
+
+**Example**: For `output = "upstream"`, only `FeatureLocForDistance` (TSS) is used to define the upstream region for overlap detection, but once overlaps are found, `distancetoFeature` is calculated using both the peak's reference point (`PeakLocForDistance`) and the feature's TSS (`FeatureLocForDistance`).
 
 | Output Mode | Uses PeakLocForDistance? | Uses FeatureLocForDistance? |
 |------------|-------------------------|----------------------------|
-| `nearestLocation` | ✅ Yes | ✅ Yes |
-| `overlapping` | ❌ No | ❌ No (uses boundaries) |
-| `both` | ✅ Yes (for nearest) | ✅ Yes (for nearest) |
-| `shortestDistance` | ❌ No | ❌ No (uses boundaries) |
+| `nearestLocation` | ✅ Yes | ✅ Yes (uses prepared reference points to find nearest) |
+| `overlapping` | ❌ No | ❌ No (uses boundaries for overlap detection) |
+| `both` | ✅ Yes (for nearest part) | ✅ Yes (for nearest part, uses prepared reference points) |
+| `shortestDistance` | ❌ No | ❌ No (uses boundaries for nearest detection) |
 | `inside` | ❌ No | ❌ No (uses boundary containment) |
-| `upstream&inside` | ❌ No | ✅ Yes (for TSS) |
-| `inside&downstream` | ❌ No | ✅ Yes (for geneEnd) |
-| `upstream` | ❌ No | ✅ Yes (for TSS) |
-| `downstream` | ❌ No | ✅ Yes (for geneEnd) |
-| `upstreamORdownstream` | ❌ No | ✅ Yes (for TSS and geneEnd) |
-| `upstream2downstream` | ❌ No | ✅ Yes (for TSS and geneEnd) |
-| `nearestBiDirectionalPromoters` | ❌ No | ✅ Yes (for bindingType determination) |
+| `upstream&inside` | ❌ No | ✅ Yes (uses TSS concept in strand-aware calculations) |
+| `inside&downstream` | ❌ No | ✅ Yes (uses geneEnd concept in strand-aware calculations) |
+| `upstream` | ❌ No | ✅ Yes (uses TSS concept in strand-aware calculations) |
+| `downstream` | ❌ No | ✅ Yes (uses geneEnd concept in strand-aware calculations) |
+| `upstreamORdownstream` | ❌ No | ✅ Yes (uses TSS and geneEnd concepts in strand-aware calculations) |
+| `upstream2downstream` | ❌ No | ❌ No (uses boundaries, expands by maxgap) |
+| `nearestBiDirectionalPromoters` | ❌ No | ✅ Yes (for bindingType determination when using annoPeaks) |
 
 ---
 

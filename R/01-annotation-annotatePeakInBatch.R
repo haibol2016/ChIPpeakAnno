@@ -612,7 +612,7 @@ annotatePeakInBatch <-
                          "nearestBiDirectionalPromoters"),
               multiple = c(TRUE,FALSE), 
               maxgap = -1L,
-              PeakLocForDistance = c("start", "middle", "end", "endMinusStart"),
+              PeakLocForDistance = c("middle", "start", "end", "endMinusStart"),
               FeatureLocForDistance = c("TSS", "middle", "start", "end", "geneEnd"),
               select = c("all", "first", "last", "arbitrary"),
               ignore.strand = TRUE,
@@ -730,6 +730,8 @@ annotatePeakInBatch <-
         }
         select <- "all" 
     }
+
+    # but for consistency, the FeatureLocForDistance should be used to calculate the distance to PeakLocForDistance?
     if (output == "inside&downstream") {
         if (FeatureLocForDistance != "geneEnd") {
             FeatureLocForDistance <- "geneEnd"
@@ -1127,6 +1129,7 @@ annotatePeakInBatch <-
         },
         
        "upstream&inside" = {
+            featureGR <- TSS.ordered
             start <- ifelse(strand(featureGR) == "-", 
                             start(featureGR), 
                             start(featureGR) - max(maxgap, 1L))
@@ -1141,6 +1144,7 @@ annotatePeakInBatch <-
             dist
         },
         "upstream" = {
+            featureGR <- TSS.ordered
             start <- ifelse(strand(featureGR) == "-", 
                             end(featureGR) + 1L, 
                             start(featureGR) - max(maxgap, 1L))
@@ -1155,6 +1159,7 @@ annotatePeakInBatch <-
             dist
         },
         "inside&downstream" = {
+            featureGR <- TSS.ordered
             start <- ifelse(strand(featureGR) == "-", 
                             start(featureGR) - max(maxgap, 1L), 
                             start(featureGR))
@@ -1169,6 +1174,7 @@ annotatePeakInBatch <-
             dist
         },
         "downstream" = {
+            featureGR <- TSS.ordered
             start <- ifelse(strand(featureGR) == "-", 
                             start(featureGR) - max(maxgap, 1L), 
                             end(featureGR) + 1L)
@@ -1183,26 +1189,29 @@ annotatePeakInBatch <-
             dist
         },
         "upstreamORdownstream" = {
-            featureGR1 <- TSS.ordered
-            start <- ifelse(strand(featureGR1) == "-", 
-                            end(featureGR1) + 1L, 
-                            start(featureGR1) - max(maxgap, 1L))
+            # upstream part
+            featureGR <- TSS.ordered
+            start <- ifelse(strand(featureGR) == "-", 
+                            end(featureGR) + 1L, 
+                            start(featureGR) - max(maxgap, 1L))
             width <- max(maxgap, 1L)
-            start(featureGR1) <- start
-            width(featureGR1) <- width
-            dist1 <- as.data.frame(findOverlaps(myPeakList, featureGR1,
+            start(featureGR) <- start
+            width(featureGR) <- width
+            dist1 <- as.data.frame(findOverlaps(myPeakList, featureGR,
                                                 ignore.strand = ignore.strand,
                                                 select = select,
                                                 type = "any"))
             dist1$output <- rep("Upstream", nrow(dist1))
-            featureGR2 <- TSS.ordered
-            start <- ifelse(strand(featureGR2) == "-", 
-                            start(featureGR2) - max(maxgap, 1L), 
-                            end(featureGR2) + 1L)
+            
+            # downstream part
+            featureGR <- TSS.ordered
+            start <- ifelse(strand(featureGR) == "-", 
+                            start(featureGR) - max(maxgap, 1L), 
+                            end(featureGR) + 1L)
             width <- max(maxgap, 1L)
-            start(featureGR2) <- start
-            width(featureGR2) <- width
-            dist2 <- as.data.frame(findOverlaps(myPeakList, featureGR2,
+            start(featureGR) <- start
+            width(featureGR) <- width
+            dist2 <- as.data.frame(findOverlaps(myPeakList, featureGR,
                                                 ignore.strand = ignore.strand,
                                                 select = select,
                                                 type = "any"))

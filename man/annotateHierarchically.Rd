@@ -6,13 +6,15 @@
 \usage{
 annotateHierarchically(
   peaks,
-  annoData,
-  factor_type,
+  EnsDb,
+  factor_type = c("TF", "H3K4me3", "H3K4me2", "H3K27ac", "H3K36me3", "H3K27me3", "PolII",
+    "RBP", "ATAC", "3end", "exon", "intron", "architectural", "ncRNA", "repeat",
+    "intergenic", "chromatin_remodeler", "multimodal"),
   is_promoter_binding = TRUE,
   annotation_strategies = NULL,
   prioritization_weights = NULL,
   prioritization_function = NULL,
-  return_all = FALSE,
+  keep = c("best", "all"),
   BPPARAM = NULL,
   sequencing_method = c("ChIP-seq", "GRO-seq", "PRO-seq", "CLIP-seq", "iCLIP", "eCLIP"),
   ...
@@ -22,9 +24,8 @@ annotateHierarchically(
 \item{peaks}{A \link[GenomicRanges:GRanges-class]{GRanges} object containing
 peaks to be annotated.}
 
-\item{annoData}{A \link[GenomicRanges:GRanges-class]{GRanges} or
-\code{\link{annoGR}} object containing annotation data (genes,
-transcripts, or TSS positions).}
+\item{EnsDb}{A \link[ensembldb:EnsDb-class]{EnsDb} object containing 
+genome annotation data (genes, transcripts, exons, etc.) for an organism.}
 
 \item{factor_type}{A character string specifying the biological factor type.
 \strong{Required if using default prioritization} (when
@@ -62,9 +63,20 @@ with a \code{priority_score} column. Additional arguments can be passed
 via \code{...}. If \code{NULL} (default), uses the built-in
 factor-specific prioritization based on \code{factor_type}.}
 
-\item{return_all}{Logical. If \code{FALSE} (default), returns only the best
-annotation per peak (plus special cases) based on priority score.
-If \code{TRUE}, returns all annotations with priority scores.}
+\item{keep}{A character string specifying which annotations to return.
+Options are:
+\itemize{
+  \item \code{"best"} (default): Returns only the best annotation per
+        peak (plus special cases) based on priority score.
+  \item \code{"all"}: Returns all annotations with priority scores.
+}}
+
+\item{BPPARAM}{An optional \code{\link[BiocParallel]{BiocParallelParam}}
+object specifying the parallel backend to use for applying multiple
+annotation strategies. If \code{NULL} (default), uses
+\code{\link[BiocParallel]{bpparam}()} which automatically detects the
+best available backend. For sequential processing, use
+\code{BiocParallel::SerialParam()}.}
 
 \item{sequencing_method}{Sequencing method. For PolII, it can be "ChIP-seq", 
 "GRO-seq", "PRO-seq". For RBP, it can be "ChIP-seq", "CLIP-seq", "iCLIP", "eCLIP".}
@@ -76,29 +88,28 @@ Returns a \link[GenomicRanges:GRanges-class]{GRanges} object
        containing annotated peaks. The object includes:
        \itemize{
          \item All standard annotation columns from \code{annotatePeakInBatch}
-               or \code{annoPeaks}
+               or \code{annotatePeaksNearBDP}
          \item \code{priority_score}: Numeric priority score (higher = better)
+               for prioritized annotations
          \item \code{strategy_name}: Name of annotation strategy that produced
-               this annotation
-         \item \code{is_bidirectional_promoter}: Logical flag indicating if
-               annotation is from a bidirectional promoter (special case)
-         \item \code{is_completely_covered}: Logical flag indicating if feature
-               is completely covered by peak (special case)
+               this annotation (e.g., "promoter_focused", "upstream_to_downstream",
+               "bidirectional_promoters")
        }
 }
 \description{
 This function provides a comprehensive annotation system that applies multiple
 annotation strategies in parallel, then ranks and prioritizes results based
 on factor-specific binding patterns. Unlike single-method annotation, this
-approach captures annotations from multiple perspectives (promoters, gene
-bodies, intergenic regions, bidirectional promoters) and intelligently
-prioritizes them based on the biological factor type.
+approach captures annotations from multiple perspectives (promoters, inside
+and downstream regions, bidirectional promoters) using transcripts extracted
+from an EnsDb object, and intelligently prioritizes them based on the
+biological factor type.
 
 \strong{Key Features:}
 \itemize{
   \item \strong{Parallel Annotation}: Applies multiple annotation strategies
-        simultaneously (promoter-focused, gene body-focused, intergenic,
-        bidirectional promoters)
+        simultaneously (promoter-focused, upstream to downstream, bidirectional
+        promoters) using transcripts from an EnsDb object
   \item \strong{Factor-Specific Prioritization}: Ranks results using
         factor-specific prioritization strategies (TF, histone marks, Pol II,
         etc.)
@@ -115,24 +126,22 @@ prioritizes them based on the biological factor type.
   \item \strong{Factor Type Validation}: Validates that \code{factor_type} is
         specified (required for accurate prioritization).
   \item \strong{Parallel Annotation}: Applies multiple annotation strategies
-        simultaneously:
+        simultaneously using transcripts extracted from the \code{EnsDb} object:
         \itemize{
-          \item Promoter-focused: \code{output = "overlapping"},
-                \code{maxgap = 2000}
-          \item Gene body: \code{bindingType = "fullRange"}
-          \item Nearest (comprehensive): \code{output = "nearestLocation"},
-                \code{maxgap = 10000}
-          \item Bidirectional promoters: Uses fixed bidirectional promoter
-                detection
-          \item Intergenic/distal: \code{output = "nearestLocation"},
-                \code{maxgap = 50000}
+          \item Promoter-focused: Uses \code{annotatePeakInBatch} with
+                \code{output = "both"}, \code{maxgap = 3000},
+                \code{FeatureLocForDistance = "TSS"}, \code{PeakLocForDistance = "middle"}
+          \item Upstream to downstream: Uses \code{annotatePeakInBatch} with
+                \code{output = "upstream2downstream"}, \code{maxgap = 5000},
+                \code{FeatureLocForDistance = "TSS"}, \code{PeakLocForDistance = "middle"}
+          \item Bidirectional promoters: Uses \code{annotatePeaksNearBDP} with
+                \code{maxTSSDistance = 1000}
         }
   \item \strong{Special Case Handling}:
         \itemize{
           \item \strong{Bidirectional Promoters}: For promoter-binding factors
-                (TF, H3K4me3, H3K27ac, H3K4me2), if a peak is in a bidirectional
-                promoter region, both divergent gene annotations are kept without
-                ranking.
+                (TF, H3K4me3, H3K27ac, H3K4me2), annotations from the
+                "bidirectional_promoters" strategy are kept without ranking.
           \item \strong{Broad Peaks}: If a peak completely covers multiple
                 features (\code{insideFeature == "includeFeature"}), all
                 completely covered features are kept without ranking.
@@ -140,9 +149,9 @@ prioritizes them based on the biological factor type.
   \item \strong{Factor-Specific Prioritization}: For annotations not in special
         cases, applies factor-specific prioritization function to calculate
         priority scores.
-  \item \strong{Result Selection}: If \code{return_all = FALSE}, returns best
-        annotation per peak (plus special cases). If \code{return_all = TRUE},
-        returns all annotations with priority scores.
+  \item \strong{Result Selection}: If \code{keep = "best"}, returns annotation 
+        with highest priority score per peak (plus special cases). 
+        If \code{keep = "all"}, returns all annotations with priority scores.
 }
 
 \strong{When to Use Hierarchical Annotation:}
@@ -160,26 +169,29 @@ prioritizes them based on the biological factor type.
 }
 \examples{
 \dontrun{
+library(EnsDb.Hsapiens.v75)
 library(GenomeInfoDb)
 data(myPeakList)
-data(TSS.human.GRCh37)
-seqlevelsStyle(TSS.human.GRCh37) <- seqlevelsStyle(myPeakList)
+
+# Create EnsDb object (or use pre-loaded EnsDb package)
+EnsDb <- EnsDb.Hsapiens.v75
+seqlevelsStyle(myPeakList) <- seqlevelsStyle(EnsDb)[1]
 
 # Specify factor type explicitly (required)
 anno_tf <- annotateHierarchically(
     myPeakList[1:100],
-    AnnotationData = TSS.human.GRCh37,
-    factor_type = "TF"
+    EnsDb = EnsDb,
+    factor_type = "TF",
     is_promoter_binding = TRUE
 )
 
 # Return all annotations with priority scores
 anno_all <- annotateHierarchically(
     myPeakList[1:100],
-    AnnotationData = TSS.human.GRCh37,
+    EnsDb = EnsDb,
     factor_type = "H3K27me3",
     is_promoter_binding = FALSE,
-    return_all = TRUE
+    keep = "all"
 )
 
 # Example 3: Using a custom prioritization function
@@ -196,7 +208,7 @@ customPrioritize <- function(annotated_peaks, weight_distance = 1000) {
 
 anno_custom <- annotateHierarchically(
     myPeakList[1:100],
-    AnnotationData = TSS.human.GRCh37,
+    EnsDb = EnsDb,
     is_promoter_binding = FALSE,
     factor_type = "H3K27me3",
     prioritization_function = customPrioritize,
@@ -207,7 +219,8 @@ anno_custom <- annotateHierarchically(
 \seealso{
 \code{\link{annotatePeakInBatch}} for single-method annotation,
          \code{\link{annoPeaks}} for region-based annotation,
-         \code{\link{peaksNearBDP}} for bidirectional promoter detection
+         \code{\link{annotatePeaksNearBDP}} for bidirectional promoter detection,
+         \code{\link[ensembldb]{EnsDb-class}} for EnsDb objects
 }
 \author{
 Haibo Liu
