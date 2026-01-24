@@ -237,7 +237,6 @@ buildLOLAregionDB <- function(genome = "hg19",
 .downloadRoadmap <- function(genome, output_dir) {
     cat("Processing Roadmap Epigenomics data...\n")
     cat("  Note: Roadmap data requires manual download\n")
-    cat("  Download from: http://www.roadmapepigenomics.org/\n")
     cat("  Or use: https://egg2.wustl.edu/roadmap/web_portal/\n\n")
     
     collection_dir <- file.path(output_dir, "Roadmap_Epigenomics")

@@ -28,7 +28,7 @@ myPeakList
 A \code{\link[GenomicRanges]{GRanges}} object containing putative STAT1-binding
 regions identified in un-stimulated cells using ChIP-seq technology. This
 dataset is commonly used in package examples and vignettes to demonstrate
-peak annotation workflows.
+peak annotation workflows. The genome assembly is hg18.
 }
 \details{
 This dataset contains 11,004 STAT1 binding peaks identified from ChIP-seq

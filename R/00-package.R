@@ -3,46 +3,84 @@
 #' @description
 #' \code{ChIPpeakAnno} is a Bioconductor package for batch annotation and analysis
 #' of peaks from ChIP-seq, ATAC-seq, CUT&RUN, CUT&Tag, CLIP-seq, and other
-#' genomic interval experiments. It annotates peaks to genomic features (genes,
-#' transcripts, exons, introns, UTRs, TSSs), performs enrichment analysis (GO, pathways),
-#' extracts sequences for motif discovery, visualizes binding patterns, identifies peaks 
-#' associated with bi-directional promoters, and tests statistical significance of peak 
-#' overlaps. It also provides functionalities to identify peaks associated with genomic features (feature-centered), and perform
-#' statistical testing on overlaps between peak sets.
+#' genomic interval experiments. It provides a comprehensive workflow for peak
+#' annotation including quality assessment, consensus peak creation, factor-specific
+#' hierarchical annotation, enhancer identification, and downstream enrichment analysis.
+#' The package annotates peaks to genomic features (genes, transcripts, exons, introns,
+#' UTRs, TSSs), integrates with epigenomic databases (ENCODE cCREs, Roadmap Epigenomics),
+#' performs enrichment analysis (GO, pathways, MSigDB), extracts sequences for motif
+#' discovery, visualizes binding patterns, identifies peaks associated with bi-directional
+#' promoters and enhancers, and tests statistical significance of peak overlaps.
 #' 
 #' @details
 #' \strong{Core Capabilities:}
 #' \itemize{
-#'   \item \strong{Peak Annotation:} Associate peaks with nearest genes, exons,
-#'         transcription start sites (TSS), or custom genomic features
+#'   \item \strong{Quality Assessment:} Comprehensive peak quality evaluation
+#'         per replicate including width distribution, score metrics, and visualization
+#'         (\code{\link{assessPeaks}})
+#'   \item \strong{Peak Filtering:} Filter peaks based on width, scores, and
+#'         quality metrics (\code{\link{filterPeaks}})
+#'   \item \strong{Consensus Peak Creation:} Combine replicates using IDR
+#'         filtering or majority voting (\code{\link{IDRfilter}},
+#'         \code{\link{findOverlapsOfPeaks}})
+#'   \item \strong{Preliminary Annotation:} Quick overview of peak distribution
+#'         across genomic features (promoters, UTRs, exons, introns, intergenic)
+#'         (\code{\link{getGenomicAnnotation}})
+#'   \item \strong{Hierarchical Annotation:} Factor-specific annotation with
+#'         multiple parallel strategies and intelligent prioritization for TFs,
+#'         histone marks, Pol II, and other factors (\code{\link{annotateHierarchically}})
 #'   \item \strong{Multiple Annotation Sources:} Support for TxDb, EnsDb,
 #'         biomaRt, and custom GRanges-based annotations
+#'   \item \strong{Epigenomic Integration:} Annotate with ENCODE cCREs
+#'         (\code{\link{annotatePeaksWithcCRE}}) and Roadmap Epigenomics data
+#'         (\code{\link{annotatePeaksWithRoadmap}}) for enhancer and chromatin
+#'         state annotations
+#'   \item \strong{Enhancer Identification:} Link peaks to enhancers and target
+#'         genes using Hi-C data or ENCODE CRE annotations (\code{\link{findEnhancers}})
 #'   \item \strong{Flexible Binding Types:} Annotate to TSS, gene ends, full
 #'         gene ranges, or bi-directional promoters
-#'   \item \strong{Enrichment Analysis:} Gene Ontology (GO) and pathway
-#'         enrichment with multiple testing correction
+#'   \item \strong{Enrichment Analysis:} Gene Ontology (GO), pathway, MSigDB,
+#'         and EnrichR enrichment with multiple testing correction
+#'         (\code{\link{getEnrichedGO}}, \code{\link{getEnrichedPATH}},
+#'         \code{\link{test_enrichment}})
 #'   \item \strong{Sequence Analysis:} Retrieve sequences of peak regions for
-#'         motif discovery and pattern matching
+#'         motif discovery and pattern matching (\code{\link{getAllPeakSequence}},
+#'         \code{\link{write2FASTA}})
 #'   \item \strong{Statistical Testing:} Hypergeometric tests, permutation
 #'         tests, and overlap significance testing
 #'   \item \strong{Visualization:} Venn diagrams, metagene plots, feature-aligned
 #'         heatmaps, and signal profile plots
 #'   \item \strong{Peak Comparison:} Find overlaps between multiple peak sets,
 #'         assess reproducibility, and generate comparison statistics
+#'   \item \strong{Global Options:} Convenient global settings for genome,
+#'         species, TxDb, and EnsDb objects (\code{\link{setChIPpeakAnnoGlobals}})
 #' }
 #' 
 #' \strong{Key Features:}
 #' \itemize{
+#'   \item \strong{Workflow-Based Analysis:} Systematic pipeline from quality
+#'         assessment through annotation to downstream enrichment analysis
+#'   \item \strong{Factor-Specific Annotation:} Intelligent prioritization
+#'         strategies tailored to transcription factors, histone marks, Pol II,
+#'         and other factor types
 #'   \item \strong{Bi-directional Promoter Detection:} Unique function
-#'         (\code{peaksNearBDP}) to identify peaks near bi-directional promoters
-#'   \item \strong{Enhancer Detection:} Use DNA interaction data (3C/HiC) to
-#'         identify enhancers associated with peaks
+#'         (\code{\link{peaksNearBDP}}) to identify peaks near bi-directional promoters
+#'   \item \strong{Enhancer Detection:} Use DNA interaction data (3C/HiC) or
+#'         ENCODE CRE annotations to identify enhancers associated with peaks
+#'         (\code{\link{findEnhancers}})
+#'   \item \strong{Epigenomic Database Integration:} Direct access to ENCODE
+#'         cCRE annotations (human hg38, mouse mm10) and Roadmap Epigenomics
+#'         data (human hg19) with automatic liftOver support
 #'   \item \strong{Signal Analysis:} Extract and visualize read coverage or
 #'         signals around genomic features
 #'   \item \strong{Pattern/Motif Enrichment:} Identify enriched DNA patterns
-#'         with statistical testing
+#'         with statistical testing, compatible with HOMER, STREME, FIMO,
+#'         and R packages (memes, monaLisa, rGADEM)
 #'   \item \strong{Comprehensive Integration:} Works seamlessly with the
-#'         Bioconductor ecosystem (TxDb, EnsDb, BSgenome, biomaRt, etc.)
+#'         Bioconductor ecosystem (TxDb, EnsDb, BSgenome, biomaRt, etc.) and
+#'         external tools (HOMER, MEME Suite)
+#'   \item \strong{Automatic Genome Assembly Handling:} Detects genome assembly
+#'         from peaks or global options, performs automatic liftOver when needed
 #' }
 #' 
 #' \strong{Obtaining Annotation Data:}
@@ -108,16 +146,55 @@
 #' }
 #' 
 #' @seealso
+#' \strong{Quality Control and Filtering:}
 #' \itemize{
+#'   \item \code{\link{assessPeaks}} - Quality assessment per replicate
+#'   \item \code{\link{filterPeaks}} - Filter peaks based on quality metrics
+#'   \item \code{\link{IDRfilter}} - IDR-based consensus peak creation (2 replicates)
+#'   \item \code{\link{findOverlapsOfPeaks}} - Consensus peak creation (3+ replicates)
+#' }
+#' 
+#' \strong{Annotation Functions:}
+#' \itemize{
+#'   \item \code{\link{getGenomicAnnotation}} - Preliminary annotation with
+#'         genomic feature distribution
+#'   \item \code{\link{annotateHierarchically}} - Factor-specific hierarchical
+#'         annotation with multiple strategies
 #'   \item \code{\link{annotatePeakInBatch}} - Main function for peak annotation
 #'   \item \code{\link{annoPeaks}} - Alternative annotation function with flexible
 #'         binding types
+#'   \item \code{\link{annotatePeaksWithcCRE}} - Annotate with ENCODE cCRE data
+#'   \item \code{\link{annotatePeaksWithRoadmap}} - Annotate with Roadmap
+#'         Epigenomics data
+#'   \item \code{\link{findEnhancers}} - Identify enhancer-associated peaks
+#'   \item \code{\link{peaksNearBDP}} - Find peaks near bi-directional promoters
+#' }
+#' 
+#' \strong{Annotation Data Preparation:}
+#' \itemize{
 #'   \item \code{\link{getAnnotation}} - Generate annotations from biomaRt
 #'   \item \code{\link{annoGR}} - Convert TxDb/EnsDb to annotation GRanges
+#'   \item \code{\link{listAvailablecCREs}} - List available ENCODE cCRE datasets
+#'   \item \code{\link{listAvailableRoadmapEpigenomes}} - List available Roadmap
+#'         epigenomes
+#'   \item \code{\link{listAvailableRoadmapTissues}} - List available Roadmap
+#'         tissue types
+#' }
+#' 
+#' \strong{Enrichment Analysis:}
+#' \itemize{
 #'   \item \code{\link{getEnrichedGO}} - GO enrichment analysis
 #'   \item \code{\link{getEnrichedPATH}} - Pathway enrichment analysis
-#'   \item \code{\link{findOverlapsOfPeaks}} - Compare multiple peak sets
-#'   \item \code{\link{peaksNearBDP}} - Find peaks near bi-directional promoters
+#'   \item \code{\link{test_enrichment}} - MSigDB and EnrichR enrichment
+#'   \item \code{\link{runLOLA}} - Locus Overlap Analysis (LOLA)
+#' }
+#' 
+#' \strong{Utilities:}
+#' \itemize{
+#'   \item \code{\link{setChIPpeakAnnoGlobals}} - Set global options (genome,
+#'         species, TxDb, EnsDb)
+#'   \item \code{\link{getAllPeakSequence}} - Extract sequences from peaks
+#'   \item \code{\link{write2FASTA}} - Write sequences to FASTA format
 #' }
 #' 
 #' For comprehensive examples and tutorials, see the package vignette:

@@ -27,6 +27,8 @@
 #'        peaks to be annotated.
 #' @param EnsDb A \link[ensembldb:EnsDb-class]{EnsDb} object containing 
 #'        genome annotation data (genes, transcripts, exons, etc.) for an organism.
+#'        If \code{NULL} or missing, the function will use the global EnsDb set by
+#'        \code{\link{setChIPpeakAnnoEnsDb}}.
 #' @param factor_type A character string specifying the biological factor type.
 #'        \strong{Required if using default prioritization} (when
 #'        \code{prioritization_function} is \code{NULL}). Options include: "TF", 
@@ -140,7 +142,8 @@
 #' @seealso \code{\link{annotatePeakInBatch}} for single-method annotation,
 #'          \code{\link{annoPeaks}} for region-based annotation,
 #'          \code{\link{annotatePeaksNearBDP}} for bidirectional promoter detection,
-#'          \code{\link[ensembldb]{EnsDb-class}} for EnsDb objects
+#'          \code{\link[ensembldb]{EnsDb-class}} for EnsDb objects,
+#'          \code{\link{setChIPpeakAnnoEnsDb}} for setting global EnsDb option
 #' @importFrom S4Vectors mcols
 #' @importFrom BiocGenerics start end
 #' @importFrom ensembldb transcripts
@@ -194,7 +197,7 @@
 #' )
 #' }
 annotateHierarchically <- function(peaks,
-                                   EnsDb,
+                                   EnsDb = NULL,
                                    factor_type = c("TF", "H3K4me3", "H3K4me2", 
                                                    "H3K27ac", "H3K36me3", "H3K27me3", 
                                                    "PolII", "RBP", "ATAC", "3end",
@@ -219,8 +222,15 @@ annotateHierarchically <- function(peaks,
         stop("'peaks' must be a GRanges object", call. = FALSE)
     }
 
+    # Check for EnsDb: use provided, then global option, then error
     if (missing(EnsDb) || is.null(EnsDb)) {
-        stop("Missing required argument 'EnsDb'!", call. = FALSE)
+        EnsDb <- getChIPpeakAnnoEnsDb()
+        if (is.null(EnsDb)) {
+            stop("Missing required argument 'EnsDb'! ",
+                 "Either provide EnsDb explicitly or set it globally using ",
+                 "setChIPpeakAnnoEnsDb().", call. = FALSE)
+        }
+        message("Using global EnsDb for annotation")
     }
     if (!inherits(EnsDb, "EnsDb")) {
         stop("'EnsDb' must be an EnsDb object", call. = FALSE)
@@ -392,7 +402,7 @@ annotateHierarchically <- function(peaks,
         }
     } else {
         # Return best annotation per peak for prioritized annotations,
-        # plus all special case annotations       
+        # plus all special case annotations
         # Add bidirectional promoter annotations (all of them)
         if (length(bdp_annotations) > 0L) {
             result_parts[["bidirectional_promoters"]] <- bdp_annotations
@@ -417,14 +427,14 @@ annotateHierarchically <- function(peaks,
             result_parts[["prioritized"]] <- best_annotations
         }
     }
-    if (length(result_parts) == 0L) {
+        if (length(result_parts) == 0L) {
         warning("No annotations found from any strategy.", call. = FALSE)
-        return(GRanges())
-    }
-    
+            return(GRanges())
+        }
+        
     # Combine all annotations
-    result <- do.call(c, result_parts)
-    return(result)
+        result <- do.call(c, result_parts)
+        return(result)
 }
 
 
@@ -566,7 +576,7 @@ applyMultipleStrategies <- function(peaks, EnsDb,
                     select = "all",
                     ignore.strand = TRUE
                 )
-            ),           
+            ),
             list(
                 name = "bidirectional_promoters",
                 method = "annotatePeaksNearBDP",
@@ -648,10 +658,10 @@ applyMultipleStrategies <- function(peaks, EnsDb,
                 ))
             } else {
                 stop("Unknown annotation method: ", method, 
-                    " for strategy: ", strategy_name, call. = FALSE)
+                       " for strategy: ", strategy_name, call. = FALSE)
             }}, error = function(e) {
                 stop("Error applying strategy '", strategy_name, "': ", 
-                    conditionMessage(e), call. = FALSE)
+                   conditionMessage(e), call. = FALSE)
             }
         )
     }

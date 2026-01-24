@@ -250,6 +250,10 @@ assignChromosomeRegion <-
              nucleotideLevel = FALSE, 
              precedence = NULL, TxDb = NULL) {
         ##check inputs
+        # Use global TxDb if not provided
+        if (is.null(TxDb)) {
+            TxDb <- getChIPpeakAnnoTxDb()
+        }
         if (!is.null(TxDb)) {
             if (!inherits(TxDb, c("TxDb", "EnsDb"))) 
                 stop("TxDb must be an object of TxDb or similar such as EnsDb, 

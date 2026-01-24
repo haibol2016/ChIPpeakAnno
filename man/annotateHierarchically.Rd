@@ -6,7 +6,7 @@
 \usage{
 annotateHierarchically(
   peaks,
-  EnsDb,
+  EnsDb = NULL,
   factor_type = c("TF", "H3K4me3", "H3K4me2", "H3K27ac", "H3K36me3", "H3K27me3", "PolII",
     "RBP", "ATAC", "3end", "exon", "intron", "architectural", "ncRNA", "repeat",
     "intergenic", "chromatin_remodeler", "multimodal"),
@@ -25,7 +25,9 @@ annotateHierarchically(
 peaks to be annotated.}
 
 \item{EnsDb}{A \link[ensembldb:EnsDb-class]{EnsDb} object containing 
-genome annotation data (genes, transcripts, exons, etc.) for an organism.}
+genome annotation data (genes, transcripts, exons, etc.) for an organism.
+If \code{NULL} or missing, the function will use the global EnsDb set by
+\code{\link{setChIPpeakAnnoEnsDb}}.}
 
 \item{factor_type}{A character string specifying the biological factor type.
 \strong{Required if using default prioritization} (when
@@ -220,7 +222,8 @@ anno_custom <- annotateHierarchically(
 \code{\link{annotatePeakInBatch}} for single-method annotation,
          \code{\link{annoPeaks}} for region-based annotation,
          \code{\link{annotatePeaksNearBDP}} for bidirectional promoter detection,
-         \code{\link[ensembldb]{EnsDb-class}} for EnsDb objects
+         \code{\link[ensembldb]{EnsDb-class}} for EnsDb objects,
+         \code{\link{setChIPpeakAnnoEnsDb}} for setting global EnsDb option
 }
 \author{
 Haibo Liu

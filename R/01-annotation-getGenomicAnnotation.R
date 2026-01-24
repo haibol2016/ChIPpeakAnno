@@ -12,7 +12,8 @@
 #' @param peaks A \code{GRanges} object containing peaks to be annotated.
 #' @param TxDb An object of class \code{\link[GenomicFeatures:TxDb-class]{TxDb}}
 #'        or \code{\link[ensembldb:EnsDb-class]{EnsDb}} containing genomic
-#'        annotation. Required for extracting detailed genomic features. If the
+#'        annotation. If \code{NULL} (default), the function will use the global
+#'        TxDb/EnsDb set by \code{\link{setChIPpeakAnnoTxDb}}. If the
 #'        seqlevels style of the TxDb is not the same as the peaks, the function
 #'        will try to match the seqlevels style of the TxDb to the peaks. 
 #'        However, due to the different naming conventions of seqlevels, 
@@ -100,6 +101,7 @@
 #'             threeUTRsByTranscript transcripts promoters exonsBy genes
 #' @importFrom GenomeInfoDb seqlengths
 #' @importFrom S4Vectors queryHits
+#' @seealso \code{\link{setChIPpeakAnnoTxDb}} for setting global TxDb/EnsDb option
 #' @examples
 #' library(TxDb.Hsapiens.UCSC.hg38.knownGene)
 #' txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
@@ -111,7 +113,7 @@
 #' # View the plot
 #' result$plot_priority_annotation
 #' @export
-getGenomicAnnotation <- function(peaks, TxDb, tssRegion = c(-3000, 3000),
+getGenomicAnnotation <- function(peaks, TxDb = NULL, tssRegion = c(-3000, 3000),
                                  immediateDownstreamLength = 3000,
                                  level = c("transcript", "gene"),
                                  genomicAnnotationPriority = c("promoter", 
@@ -125,6 +127,16 @@ getGenomicAnnotation <- function(peaks, TxDb, tssRegion = c(-3000, 3000),
                                                             "distalIntergenic"),
                                  ignore_strand = TRUE,
                                  usePeakCenter = TRUE) {   
+    # Check for TxDb: use provided, then global option, then error
+    if (is.null(TxDb)) {
+        TxDb <- getChIPpeakAnnoTxDb()
+        if (is.null(TxDb)) {
+            stop("Missing required argument 'TxDb'! ",
+                 "Either provide TxDb explicitly or set it globally using ",
+                 "setChIPpeakAnnoTxDb().", call. = FALSE)
+        }
+        message("Using global TxDb/EnsDb for annotation")
+    }
     if (!inherits(TxDb, c("TxDb", "EnsDb"))) {
         stop("TxDb must be a TxDb or EnsDb object", call. = FALSE)
     }

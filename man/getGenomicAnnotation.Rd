@@ -6,7 +6,7 @@
 \usage{
 getGenomicAnnotation(
   peaks,
-  TxDb,
+  TxDb = NULL,
   tssRegion = c(-3000, 3000),
   immediateDownstreamLength = 3000,
   level = c("transcript", "gene"),
@@ -21,7 +21,8 @@ getGenomicAnnotation(
 
 \item{TxDb}{An object of class \code{\link[GenomicFeatures:TxDb-class]{TxDb}}
 or \code{\link[ensembldb:EnsDb-class]{EnsDb}} containing genomic
-annotation. Required for extracting detailed genomic features. If the
+annotation. If \code{NULL} (default), the function will use the global
+TxDb/EnsDb set by \code{\link{setChIPpeakAnnoTxDb}}. If the
 seqlevels style of the TxDb is not the same as the peaks, the function
 will try to match the seqlevels style of the TxDb to the peaks. 
 However, due to the different naming conventions of seqlevels, 
@@ -128,4 +129,7 @@ annotated_peaks <- result$peaks_annotated_with_overlapping_features
 head(mcols(annotated_peaks)[, c("annotation", "priorityAnnotation")])
 # View the plot
 result$plot_priority_annotation
+}
+\seealso{
+\code{\link{setChIPpeakAnnoTxDb}} for setting global TxDb/EnsDb option
 }
