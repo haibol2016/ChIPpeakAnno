@@ -4,5 +4,5 @@
 .Ruserdata
 .Rbuildignore
 .DS_Store
-.Rproj
+*.Rproj
 .cursor
