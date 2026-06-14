@@ -1,30 +1,89 @@
 CHANGES IN VERSION 3.45.3 (or next version)
 --------------------------------------------
 
+    o NEW FUNCTIONS
+      - getGeneIdSymbolBiotypeFromGTF(): Extract gene_id, transcript_id, exon_id,
+        gene_name, and biotype from Ensembl GTF files (supports gzipped input and
+        feature_type filtering)
+      - runLOLA() and loadRegionDB(): Re-exported LOLA functions for enrichment
+        analysis of genomic regions against reference region databases
+      - MSigDB and EnrichR integration: test_enrichment(), list_available_msigdbr_species(),
+        load_msigdbr_gene_sets(), get_enrichr_libraries(), get_enrichr_libraries_info()
+      - getGenomicAnnotation(): Assign genomic context (promoter, UTR, exon, intron,
+        downstream, intergenic) to peaks from TxDb or EnsDb objects
+      - peaksNearBDP() and annotatePeaksNearBDP(): Identify and annotate peaks near
+        bidirectional promoters (head-to-head gene pairs)
+      - annotateHierarchically() and applyMultipleStrategies(): Hierarchical annotation
+        system applying multiple strategies with factor-specific prioritization;
+        supports ChIP-seq, GRO-seq, PRO-seq, CLIP-seq, iCLIP, and eCLIP
+      - prioritizeAnnotations() and factor-specific prioritization functions:
+        prioritizeTFAnnotations(), prioritizePromoterHistoneAnnotations(),
+        prioritizeEnhancerHistoneAnnotations(), prioritizeGeneBodyHistoneAnnotations(),
+        prioritizePolIIAnnotations(), prioritizeRBPAnnotations(),
+        prioritizeThreeEndAnnotations(), prioritizeExonSpecificAnnotations(),
+        prioritizeIntronSpecificAnnotations(), prioritizeArchitecturalAnnotations(),
+        prioritizeNonCodingRNAAnnotations(), prioritizeRepetitiveElementAnnotations(),
+        prioritizeIntergenicAnnotations(), prioritizeChromatinRemodelerAnnotations(),
+        and prioritizeMultiModalAnnotations()
+    
+    o REMOVED FUNCTIONS
+      - Removed unused helper functions addAncestors() and ratio.zScore()
+    
+    o REFACTORED CORE ANNOTATION FUNCTIONS
+      - annoPeaks(): Enhanced documentation, improved parameter handling, better
+        error messages, and code prettification
+      - annotatePeakInBatch(): Comprehensive documentation rewrite; clarified output,
+        PeakLocForDistance, FeatureLocForDistance, and bindingRegion parameters;
+        added Annotation Method Selection and Parameter Selection Guide sections
+    
     o MAJOR DOCUMENTATION IMPROVEMENTS
       - Comprehensive documentation updates across 50+ R files
-      - Enhanced parameter descriptions, examples, and usage guidance
-      - Added Details sections to all updated functions
-      - Improved clarity and accuracy of function documentation
+      - Core annotation: annotatePeakInBatch, annoGR, annoPeaks
+      - Overlap: findOverlapsOfPeaks, getVennCounts, makeVennDiagram,
+        findOverlappingPeaks
+      - Signal: featureAlignedDistribution, featureAlignedHeatmap, featureAlignedSignal,
+        featureAlignedExtendSignal, metagene
+      - Statistical: buildBindingDistribution, peakPermTest, permPool, preparePool,
+        randPeaks, cntOverlaps
+      - Conversion: toGRanges
+      - Visualization: pie1
+      - Utilities: IDRfilter, addMetadata, condenseMatrixByColnames, convert2EntrezID,
+        downstreams, estFragmentLength, estLibSize, expandGR, findEnhancers,
+        mergePlusMinusPeaks, oligoSummary, summarizeOverlapsByBins, tileCount,
+        tileGRanges, xget
+      - Distribution: assignChromosomeRegion, binOverFeature, binOverRegions,
+        binOverGene, cumulativePercentage, genomicElementDistribution,
+        genomicElementUpSetR
+      - Sequence: write2FASTA, getAllPeakSequence, countPatternInSeqs,
+        translatePattern, summarizePatternInPeaks, getGeneSeq, findMotifsInPromoterSeqs
+      - Enrichment: hyperGtest, getUniqueGOidCount, getGO, getEnrichedPATH,
+        getEnrichedGO, enrichmentPlot, addGeneIDs
+      - Enhanced parameter descriptions, examples, Details sections, and usage guidance
+        for all updated functions
     
     o BUG FIXES
-      - Fixed: Peaks on chromosomes without annotation are now kept with NA 
+      - Fixed: Peaks on chromosomes without annotation are now kept with NA
         annotations instead of being silently removed (annotatePeakInBatch)
-      - Fixed: When no common seqlevels exist, all peaks are returned with NA 
+      - Fixed: When no common seqlevels exist, all peaks are returned with NA
         annotations instead of empty GRanges (annotatePeakInBatch)
     
     o CODE IMPROVEMENTS
       - Comprehensive code prettification across all modified files
       - Consistent spacing, indentation, and formatting
       - Fixed linter warnings (seq_len, seq_along, sequence, unused variables)
-      - Added missing import statements
+      - Added missing import statements: grid.pretty, DelayedArray, ccf,
+        makeGRangesFromDataFrame, assay
       - Fixed spacing and formatting in annoPeaks() for nearestBiDirectionalPromoters
         binding type (promoters() and findOverlaps() calls)
     
-    o NEW DOCUMENTATION
-      - Added Peak_Annotation_Prioritization_Strategies.md: Comprehensive guide
-        for custom peak annotation prioritization with strategies for different
-        factor types (TFs, histone marks, Pol II, RBPs, etc.)
+    o NEW DOCUMENTATION FILES
+      - Peak_Annotation_Prioritization_Strategies.md: Comprehensive guide for custom
+        peak annotation prioritization with strategies for different factor types
+        (TFs, histone marks, Pol II, RBPs, etc.)
+      - annotatePeakInBatch_parameter_explanation_Diagram.md: Visual diagrams for
+        output modes and parameter interactions (moved to docs/)
+      - Peak_Annotation_Best_Practices.md and Peak_Annotation_Parameter_Guide.md:
+        Enhanced existing guides in docs/
       - Clarified bidirectional promoter terminology (package vs. literature)
       - Added literature references supporting prioritization strategies
     
@@ -32,46 +91,9 @@ CHANGES IN VERSION 3.45.3 (or next version)
       - Clarified when annoPeaks() (Method 1) vs. internal logic (Method 2) is used
       - Enhanced bidirectional promoter documentation with literature comparison
       - Improved annotation method selection guidance
-    
-    o NEW FUNCTIONS
-      - annotateHierarchically(): Hierarchical annotation system that applies multiple
-        annotation strategies in parallel and prioritizes results based on factor-specific
-        binding patterns. Supports factor-specific prioritization for TFs, histone marks,
-        Pol II, RBPs, and other factor types. Provides comprehensive annotation from
-        multiple perspectives (promoters, gene bodies, intergenic regions, bidirectional
-        promoters).
-      - annotatePeaksNearBDP(): Lower-level function for annotating peaks near bidirectional
-        promoters. Returns a flat GRanges object with dual annotations (both genes in BDP
-        pairs). Designed for integration into hierarchical annotation pipelines.
-      - prioritizeAnnotations(): Main prioritization function that applies factor-specific
-        prioritization strategies to annotated peaks. Supports custom prioritization
-        functions or uses built-in strategies based on factor type.
-      - Factor-specific prioritization functions:
-        * prioritizeTFAnnotations(): Prioritization for transcription factors
-        * prioritizePromoterHistoneAnnotations(): For H3K4me3, H3K4me2, H3K27ac
-        * prioritizeGeneBodyHistoneAnnotations(): For H3K36me3
-        * prioritizeEnhancerHistoneAnnotations(): For enhancer-associated marks
-        * prioritizePolIIAnnotations(): For Pol II ChIP-seq
-        * prioritizeRBPAnnotations(): For RNA-binding proteins
-        * prioritizeIntergenicAnnotations(): For intergenic factors
-        * prioritizeThreeEndAnnotations(): For 3' end factors
-        * prioritizeExonSpecificAnnotations(): For exon-specific factors
-        * prioritizeIntronSpecificAnnotations(): For intron-specific factors
-        * prioritizeArchitecturalAnnotations(): For architectural features
-        * prioritizeChromatinRemodelerAnnotations(): For chromatin remodelers
-        * prioritizeMultiModalAnnotations(): For multimodal factors
-        * prioritizeNonCodingRNAAnnotations(): For non-coding RNA factors
-        * prioritizeRepetitiveElementAnnotations(): For repetitive element factors
-      - applyMultipleStrategies(): Helper function to apply multiple annotation strategies
-        in parallel and combine results.
-    
-    o NEW FUNCTION DOCUMENTATION
-      - Added comprehensive documentation for annotatePeaksNearBDP() function
-        - Complete parameter descriptions with usage guidance
-        - Detailed algorithm explanation (two-step process)
-        - Comparison with peaksNearBDP() function
-        - Examples demonstrating usage and output structure
-        - Explanation of dual annotation approach (both genes in BDP pairs)
+      - Added comprehensive documentation for annotatePeaksNearBDP(), including
+        algorithm explanation, comparison with peaksNearBDP(), and dual-annotation
+        output structure
     
     o CODE REORGANIZATION (December 2024)
       - Reorganized R source files with functionality group prefixes for easier navigation:
@@ -93,16 +115,11 @@ CHANGES IN VERSION 3.45.3 (or next version)
     
     o DATA OBJECT UPDATES (January 2025)
       - Consolidated example peak datasets into peaksets.R
+      - Consolidated data documentation into fewer files (annotatedPeak.hotspot.EncodeTFBS.R,
+        peaksets.R, prebuilt.annodata.R)
       - Added new prebuilt annotation data objects (prebuilt.annodata.R)
       - Added annotatedPeak.hotspot.EncodeTFBS.R: Example annotated peaks from ENCODE TFBS
       - Updated data object documentation and examples
-    
-    o RECENT CODE FIXES (January 2025)
-      - Fixed spacing and formatting in annoPeaks() for nearestBiDirectionalPromoters
-        binding type (promoters() and findOverlaps() calls)
-      - Improved code consistency and readability
-    
-    See CHANGELOG_RECENT.md for detailed list of all changes.
 
 CHANGES IN VERSION 3.45.2
 -------------------------
