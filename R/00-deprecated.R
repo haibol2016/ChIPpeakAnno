@@ -29,13 +29,6 @@
 #' Several pre-computed TSS annotation datasets for legacy genome assemblies
 #' are deprecated and will be removed in a future release:
 #' \itemize{
-#'   \item \code{TSS.human.NCBI36} (hg18)
-#'   \item \code{TSS.human.GRCh38} (hg38) - kept for examples only
-#'   \item \code{TSS.mouse.NCBIM37} (mm9)
-#'   \item \code{TSS.rat.RGSC3.4} (rn4)
-#'   \item \code{TSS.rat.Rnor_5.0} (rn5)
-#'   \item \code{TSS.zebrafish.Zv8} (danRer7)
-#'   \item \code{TSS.zebrafish.Zv9} (danRer10)
 #' }
 #' 
 #' \strong{Note:} The datasets \code{TSS.human.GRCh37} and

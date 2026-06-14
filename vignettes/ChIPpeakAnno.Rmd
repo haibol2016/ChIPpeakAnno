@@ -95,11 +95,11 @@ their identified regions.
 
 ## Why Peak Annotation Matters
 
-Peak annotation—the process of associating genomic regions (peaks) with known
-biological features such as genes, promoters, enhancers, and other regulatory
-elements—is a fundamental step in functional genomics analysis. Proper
-annotation transforms raw genomic coordinates into biologically meaningful
-information, enabling researchers to:
+Peak annotation—the process of associating genomic regions (peaks) with
+nearby genomic features, usually gene transcripts, to understand their
+functional implications—is a fundamental step in functional genomics
+analysis. Proper annotation transforms raw genomic coordinates into
+biologically meaningful information, enabling researchers to:
 
 1. **Identify target genes**: Determine which genes are potentially regulated
    by transcription factors, histone modifications, or other chromatin features
@@ -135,91 +135,70 @@ consensus:
 
 ### Annotation Strategies
 
+Three common annotation approaches are supported, each suited to different
+analysis goals:
+
 1. **Peak-centric approach**: Find the nearest feature to each peak (e.g.,
-   nearest TSS, nearest gene). Useful for transcription factors with narrow
-   binding sites.
-2. **Feature-centric approach**: Identify peaks within specific regions
-   (e.g., promoter regions, gene bodies). Useful for histone marks and broad
-   chromatin features.
-3. **Hierarchical annotation**: Apply multiple strategies in parallel and
-   prioritize results based on factor type. Recommended for comprehensive
-   analysis.
+   nearest TSS, nearest gene). This approach answers "What is the closest
+   gene to each peak?" and is useful for transcription factors with narrow
+   binding sites. This is the default approach in many annotation tools
+   [@zhu2010].
+
+2. **Feature-centric approach**: Identify peaks within specific genomic
+   regions (e.g., promoter regions, gene bodies). This approach answers
+   "Which peaks are in promoters?" and is useful for histone marks and broad
+   chromatin features. Promoter regions are typically defined as -2 kb to
+   +500 bp from TSS [@encode2012].
+
+3. **Hierarchical annotation**: Apply multiple annotation strategies in
+   parallel and prioritize results based on factor type. This comprehensive
+   approach combines peak-centric and feature-centric methods, then uses
+   factor-specific prioritization to select the most biologically relevant
+   annotation for each peak. This is implemented in
+   \code{annotateHierarchically()} and is recommended for comprehensive
+   analysis when factor type is known.
 
 ### Quality Considerations
 
 + **Genome assembly matching**: Always ensure annotation data matches the
   genome assembly used for peak calling (e.g., hg38, mm10)
-+ **Use latest annotations**: Prefer comprehensive annotation sources
++ **Use latest annotations whenever possible**: Prefer comprehensive annotation sources
   (GENCODE, Ensembl) and document annotation versions
 + **Factor-specific parameters**: Different factors require different
-  annotation strategies:
+  annotation strategies with appropriate parameters for each factor type:
   - Transcription factors: Promoter-focused annotation
   - Histone marks: Region-specific or gene body annotation
   - RNA-binding proteins: Strand-aware, transcript-level annotation
 + **Validation**: Always validate annotation results against known
   biological patterns (e.g., promoter enrichment for TFs)
 
+## ChIPpeakAnno
+Various algorithms have been developed to identify peaks from experimental
+data [@thomas2017]. **Peak calling** identifies genomic regions of
+significant read enrichment (peaks), representing binding sites of the
+protein or epigenetic marker of interest. While peak files can be
+visualized in genome browsers, manual examination of large peak sets is
+impractical. The `r Biocpkg("ChIPpeakAnno")` package addresses this need by
+providing comprehensive tools for batch annotation and analysis of peaks
+from various genomic interval experiments.
+
+`r Biocpkg("ChIPpeakAnno")` has been actively developed since 2010 with
+regular feature additions^[https://github.com/jianhong/ChIPpeakAnno/blob/devel/NEWS].
+For usage questions, search or post on the [Bioconductor Support
+Site](https://support.bioconductor.org/new/post/). For feature requests or
+bug reports, open an issue on the
+[GitHub repository](https://github.com/jianhong/ChIPpeakAnno).
+
 The analysis involves several key procedures as outlined below. The steps
 where `r Biocpkg("ChIPpeakAnno")` package can be utilized are displayed in
 pink boxes.
-
-Explanations of selected terms:
-
-+ Peak calling: identify the genomic regions of significant read enrichment
-  (peaks), which represent the binding sites of the protein or epigenetic
-  marker of interest
-+ Peak annotation: associate peaks with nearby genomic features, usually
-  gene transcripts, to understand their functional implications
-+ Enrichment analysis: identify the gene ontology (GO) terms or biological
-  pathways that are associated with the annotated genes
-+ Motif analysis: identify the enriched DNA patterns within peaks to
-  understand the binding preference of the target protein
-
-Various algorithms have been developed to identify peaks from experimental
-data [@thomas2017]. Once the peak files are obtained, they are commonly
-converted into formats like
-[_BED_](https://en.wikipedia.org/wiki/BED_(file_format)) and its variants.
-These formats allow the data to be easily loaded into genome browsers, such
-as the UCSC Genome Browser, as custom tracks. This enables investigators to
-examine the proximity of the peaks to different genomic features like
-promoters, enhancers, or other regulatory elements. However manually
-navigating through the genome browser can be a daunting task due to the
-typically large number of peaks that are spread across the genome.
-
-The _Bioconductor_ package `r Biocpkg("ChIPpeakAnno")` is a pioneering tool
-that facilitates the batch annotation of peaks obtained from various
-technologies. One notable feature of `r Biocpkg("ChIPpeakAnno")` is its
-ability to dynamically retrieve up-to-date annotations by leveraging the
-`r Biocpkg("biomaRt")` package. This enables users to access the most current
-annotation files. Additionally, users can supply their own annotation data or
-utilize existing annotation packages. Furthermore, `r Biocpkg("ChIPpeakAnno")`
-provides functions to retrieve sequences surrounding the peaks, which can be
-utilized for peak validation via PCR and motif discovery [@Durinck2005]. The
-package also facilitates the identification of enriched GO or pathway terms.
-In addition, `r Biocpkg("ChIPpeakAnno")` includes several helper functions
-that aid in visualizing binding patterns and comparing peak profiles across
-multiple samples or experimental conditions.
-
-`r Biocpkg("ChIPpeakAnno")` has been continuously enhanced since its initial
-release in 2010, as evident from its active
-development^[https://github.com/jianhong/ChIPpeakAnno/blob/devel/NEWS]. New
-features are being regularly added based on user requests. If you have any
-usage related questions, please search for solutions or post new questions on
-the [Bioconductor Support
-Site](https://support.bioconductor.org/new/post/), which is actively
-monitored by many seasoned users and developers. For feature request, bug
-report, or any other concerns, raise an issue on the
-[ChIPpeakAnno](https://github.com/jianhong/ChIPpeakAnno) GitHub repository.
-Your input and contributions will be greatly appreciated and carefully
-considered.
-
 ```{r, fig.cap = "A workflow for ChIP-seq data analysis", echo = FALSE, out.width = "100%", out.height = "100%"}
 png <- system.file("extdata", "dataFlow.png", package = "ChIPpeakAnno")
 
 knitr::include_graphics(png)
 ```
 
-# How to cite ChIPpeakAnno
+**How to cite ChIPpeakAnno**
 
 If you use `r Biocpkg("ChIPpeakAnno")` in your work, please cite it as follows:
 
@@ -1090,6 +1069,12 @@ annotated_diff <- annotateHierarchically(
 
 ## Step 10: Peak Overlap Enrichment Analysis
 
+**Enrichment analysis** identifies the gene ontology (GO) terms or
+biological pathways that are associated with the annotated genes. This
+analysis helps understand the functional significance of the peaks by
+revealing overrepresented biological processes, molecular functions, and
+cellular components.
+
 Compare your peaks against reference peak sets (e.g., ENCODE, Roadmap
 Epigenomics) using LOLA or ChIPpeakAnno's overlap functions.
 
@@ -1226,6 +1211,12 @@ if (length(tf_annotated) > 0 && "gene_name" %in% colnames(mcols(tf_annotated))) 
 ```
 
 ## Step 12: Motif Analysis
+
+**Motif analysis** identifies the enriched DNA patterns within peaks to
+understand the binding preference of the target protein. This analysis can
+reveal sequence motifs that are recognized by transcription factors or
+other DNA-binding proteins, providing insights into the molecular mechanisms
+of binding.
 
 Extract peak sequences and perform motif discovery/enrichment using
 sophisticated tools.

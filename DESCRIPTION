@@ -3,14 +3,14 @@ Package: ChIPpeakAnno
 Title: Batch annotation of the peaks identified from either ChIP-seq,
     ChIP-chip experiments, or any experiments that result in large number
     of genomic interval data
-Version: 3.45.2
+Version: 3.45.3
 Authors@R: 
     c(
         person("Lihua Julie", "Zhu", email = "julie.zhu@umassmed.edu"),
         person("Jianhong", "Ou", email = "jou@morgridge.org", role = "cre"),
-        person("Jun", "Yu"),
-        person("Kai", "Hu", email = "kai.hu@umassmed.edu"),
         person("Haibo", "Liu", email = "haibo.liu@umassmed.edu"),
+        person("Kai", "Hu", email = "kai.hu@umassmed.edu"),
+        person("Jun", "Yu"),
         person("Junhui", "Li", email = "junhui.li@umassmed.edu",),
         person("Hervé", "Pagès"),
         person("Claude", "Gazin"),
@@ -20,19 +20,29 @@ Authors@R:
         person("David", "Lapointe"),
         person("Michael", "Green")
     )
-Description: The package encompasses a range of functions for identifying
-    the closest gene, exon, miRNA, or custom features—such as highly
-    conserved elements and user-supplied transcription factor binding
-    sites.  Additionally, users can retrieve sequences around the peaks
-    and obtain enriched Gene Ontology (GO) or Pathway terms. In version
-    2.0.5 and beyond, new functionalities have been introduced. These
-    include features for identifying peaks associated with bi-directional
-    promoters along with summary statistics (peaksNearBDP), summarizing
-    motif occurrences in peaks (summarizePatternInPeaks), and associating
-    additional identifiers with annotated peaks or enrichedGO
-    (addGeneIDs). The package integrates with various other packages such
-    as biomaRt, IRanges, Biostrings, BSgenome, GO.db, multtest, and stat
-    to enhance its analytical capabilities.
+Description: ChIPpeakAnno is a comprehensive Bioconductor package for batch
+    annotation and analysis of peaks from ChIP-seq, ATAC-seq, CUT&RUN,
+    CUT&Tag, CLIP-seq, and other genomic interval experiments. The package
+    provides a systematic workflow from quality assessment through annotation
+    to downstream enrichment analysis. Key capabilities include: (1) quality
+    assessment and filtering of peaks per replicate, (2) consensus peak
+    creation from multiple replicates using IDR or overlap-based methods, (3)
+    factor-specific hierarchical annotation with intelligent prioritization
+    strategies for transcription factors, histone marks, and other factor
+    types, (4) integration with epigenomic databases including ENCODE cCREs
+    and Roadmap Epigenomics with automatic liftOver support, (5) enhancer
+    identification using Hi-C data, ENCODE CRE annotations, and Epigenetics
+    Roadmap enhancer annotations, (6) enrichment analysis for gene ontology
+    (GO)/pathways using databases such as MSigDB and EnrichR, (7) sequence
+    extraction for motif discovery compatible with external tools (HOMER,
+    STREME, FIMO) and R packages (memes, monaLisa) for in-depth motif
+    analysis, (8) visualization tools including metagene plots,
+    feature-aligned heatmaps, and signal profiles, and (9) statistical
+    testing for peak overlaps and enrichment. The package supports multiple
+    annotation sources (TxDb, EnsDb, biomaRt, custom GRanges) and provides
+    unique functions for identifying peaks near bi-directional promoters. It
+    integrates seamlessly with the Bioconductor ecosystem including
+    GenomicRanges, Biostrings, BSgenome, and annotation databases.
 License: GPL (>= 2)
 Depends: 
     GenomicRanges (>= 1.31.8),
@@ -80,7 +90,6 @@ Imports:
     VennDiagram
 Suggests: 
     AnnotationHub,
-    BiocFileCache,
     BiocManager,
     BiocParallel,
     BiocStyle,
@@ -95,22 +104,16 @@ Suggests:
     EnsDb.Hsapiens.v79,
     EnsDb.Hsapiens.v86,
     GO.db,
-    gplots,
     idr,
     knitr,
-    limma,
     LOLA,
-    motifStack,
     org.Ce.eg.db,
     org.Hs.eg.db,
-    OrganismDbi,
     reactome.db,
     reshape2,
     rmarkdown,
     seqinr,
     testthat,
-    trackViewer,
-    TxDb.Hsapiens.UCSC.hg18.knownGene,
     TxDb.Hsapiens.UCSC.hg19.knownGene,
     TxDb.Hsapiens.UCSC.hg38.knownGene,
     UpSetR
